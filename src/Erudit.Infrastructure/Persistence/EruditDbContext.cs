@@ -16,6 +16,7 @@ public class EruditDbContext(DbContextOptions<EruditDbContext> options) : DbCont
     public DbSet<Person> People => Set<Person>();
     public DbSet<PersonRole> PersonRoles => Set<PersonRole>();
     public DbSet<ParentLink> ParentLinks => Set<ParentLink>();
+    public DbSet<LoginRequest> LoginRequests => Set<LoginRequest>();
 
     public DbSet<AcademicYear> AcademicYears => Set<AcademicYear>();
     public DbSet<SchoolClass> SchoolClasses => Set<SchoolClass>();

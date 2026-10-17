@@ -42,24 +42,37 @@ public sealed class TestDatabase : IAsyncLifetime
     }
 
     /// <summary>
-    /// Пересоздаёт тестовую базу с русской сортировкой ICU — как erudit_dev.
-    /// (EF Core создал бы базу сам, но с сортировкой сервера по умолчанию.)
+    /// Готовит пустую тестовую базу с русской сортировкой ICU — как erudit_dev.
+    /// Базы нет — создаём (EF Core создал бы её сам, но с сортировкой сервера по умолчанию).
+    /// База есть — не удаляем её, а очищаем схему public: так подготовка работает,
+    /// даже если к базе подключён pgAdmin (удалить базу с чужими подключениями нельзя).
     /// </summary>
     private static async Task RecreateDatabaseAsync()
     {
         var builder = new NpgsqlConnectionStringBuilder(ConnectionString);
         var databaseName = builder.Database!;
-        builder.Database = "postgres"; // служебная база: к удаляемой подключаться нельзя
+        builder.Database = "postgres"; // служебная база: в ней проверяем и создаём тестовую
 
-        await using var connection = new NpgsqlConnection(builder.ConnectionString);
+        await using (var server = new NpgsqlConnection(builder.ConnectionString))
+        {
+            await server.OpenAsync();
+            await using var exists = new NpgsqlCommand("SELECT 1 FROM pg_database WHERE datname = @name", server);
+            exists.Parameters.AddWithValue("name", databaseName);
+            if (await exists.ExecuteScalarAsync() is null)
+            {
+                await using var create = new NpgsqlCommand($"""
+                    CREATE DATABASE "{databaseName}" ENCODING 'UTF8' TEMPLATE template0
+                        LOCALE_PROVIDER icu ICU_LOCALE 'ru-RU' LOCALE 'C'
+                    """, server);
+                await create.ExecuteNonQueryAsync();
+                return;
+            }
+        }
+
+        await using var connection = new NpgsqlConnection(ConnectionString);
         await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = $"""
-            DROP DATABASE IF EXISTS "{databaseName}" WITH (FORCE);
-            CREATE DATABASE "{databaseName}" ENCODING 'UTF8' TEMPLATE template0
-                LOCALE_PROVIDER icu ICU_LOCALE 'ru-RU' LOCALE 'C';
-            """;
-        await command.ExecuteNonQueryAsync();
+        await using var reset = new NpgsqlCommand("DROP SCHEMA public CASCADE; CREATE SCHEMA public;", connection);
+        await reset.ExecuteNonQueryAsync();
     }
 
     public Task DisposeAsync() => Task.CompletedTask;

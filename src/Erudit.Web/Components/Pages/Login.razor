@@ -1,6 +1,15 @@
 @page "/login"
 @attribute [AllowAnonymous]
+@implements IAsyncDisposable
+@using Erudit.Infrastructure.Auth
+@using Erudit.Infrastructure.Max
+@using Microsoft.Extensions.Options
+@using QRCoder
 @inject IWebHostEnvironment Environment
+@inject LoginRequestService LoginRequests
+@inject IOptions<MaxOptions> MaxOptions
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
 
 <PageTitle>Вход</PageTitle>
 
@@ -15,12 +24,44 @@
             </MudAlert>
         </Authorized>
         <NotAuthorized>
-            <MudText Class="mb-4">
-                Вход выполняется через мессенджер MAX: отсканируйте QR-код телефоном и подтвердите вход в боте.
-            </MudText>
-            <MudAlert Severity="Severity.Normal" Variant="Variant.Outlined">
-                Вход по QR-коду появится на следующем шаге этапа 2.
-            </MudAlert>
+            @if (Error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Class="mb-4">Не удалось войти. Отсканируйте код ещё раз.</MudAlert>
+            }
+
+            @switch (_state)
+            {
+                case null:
+                    <MudProgressCircular Indeterminate Class="d-block mx-auto my-8" />
+                    break;
+
+                case LoginRequestState.Waiting:
+                    <MudText Class="mb-2">
+                        Отсканируйте код камерой телефона — откроется бот в MAX. Подтвердите вход в боте.
+                    </MudText>
+                    <div class="d-flex justify-center my-2">
+                        <img src="@_qrImage" alt="QR-код для входа через MAX" width="240" height="240" />
+                    </div>
+                    <MudText Typo="Typo.body2" Align="Align.Center" Class="mb-2">
+                        Сайт открыт на телефоне? <MudLink Href="@_botLink" Target="_blank">Открыть бота</MudLink>
+                    </MudText>
+                    <MudCheckBox @bind-Value="_foreignComputer" Label="Чужой компьютер (не запоминать вход)" Dense />
+                    break;
+
+                case LoginRequestState.Confirmed:
+                    <MudAlert Severity="Severity.Success">Вход подтверждён, открываем сайт...</MudAlert>
+                    break;
+
+                case LoginRequestState.Rejected:
+                    <MudAlert Severity="Severity.Warning" Class="mb-4">Вход отклонён в боте.</MudAlert>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="StartAsync" FullWidth>Показать новый код</MudButton>
+                    break;
+
+                case LoginRequestState.Expired:
+                    <MudAlert Severity="Severity.Normal" Variant="Variant.Outlined" Class="mb-4">Код устарел.</MudAlert>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="StartAsync" FullWidth>Показать новый код</MudButton>
+                    break;
+            }
 
             @if (Environment.IsDevelopment())
             {
@@ -33,3 +74,89 @@
         </NotAuthorized>
     </AuthorizeView>
 </MudPaper>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+    [SupplyParameterFromQuery(Name = "error")] private string? Error { get; set; }
+
+    private LoginRequestState? _state;
+    private int _requestId;
+    private string _secret = "";
+    private string _qrImage = "";
+    private string _botLink = "";
+    private bool _foreignComputer;
+    private CancellationTokenSource? _polling;
+
+    // Почему не OnInitializedAsync: страница сначала «пререндерится» на сервере как обычный HTML,
+    // а потом оживает по SignalR — и OnInitializedAsync выполняется дважды. Запрос входа создался бы два раза.
+    // OnAfterRenderAsync(firstRender) выполняется только в «живой» странице, и здесь уже доступен JavaScript.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && (await AuthState).User.Identity?.IsAuthenticated != true)
+        {
+            await StartAsync();
+        }
+    }
+
+    private async Task StartAsync()
+    {
+        var userAgent = await JS.InvokeAsync<string>("erudit.userAgent");
+        var (request, secret) = await LoginRequests.CreateAsync(DeviceDescription.FromUserAgent(userAgent));
+        _requestId = request.Id;
+        _secret = secret;
+
+        _botLink = $"https://max.ru/{MaxOptions.Value.BotUsername}?start={LoginRequestService.StartPayloadPrefix}{request.Token}";
+        using var qr = new QRCodeGenerator().CreateQrCode(_botLink, QRCodeGenerator.ECCLevel.M);
+        _qrImage = "data:image/png;base64," + Convert.ToBase64String(new PngByteQRCode(qr).GetGraphic(8));
+
+        _state = LoginRequestState.Waiting;
+        StateHasChanged();
+
+        _polling?.Cancel();
+        _polling = new CancellationTokenSource();
+        _ = PollAsync(_polling.Token);
+    }
+
+    /// <summary>
+    /// Раз в 2 секунды спрашиваем базу, не подтвердили ли вход в боте.
+    /// Просто и надёжно: бот и страница общаются только через таблицу login_requests.
+    /// </summary>
+    private async Task PollAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                var state = await LoginRequests.GetStateAsync(_requestId, ct);
+                if (state == LoginRequestState.Waiting)
+                {
+                    continue;
+                }
+
+                _state = state;
+                await InvokeAsync(StateHasChanged);
+                if (state == LoginRequestState.Confirmed)
+                {
+                    // Cookie можно получить только обычным HTTP-запросом — уходим со страницы на /auth/complete.
+                    var persistent = _foreignComputer ? "false" : "true";
+                    Navigation.NavigateTo(
+                        $"auth/complete?id={_requestId}&secret={Uri.EscapeDataString(_secret)}&persistent={persistent}",
+                        forceLoad: true);
+                }
+                return;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Страницу закрыли или показали новый код.
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _polling?.Cancel();
+        _polling?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

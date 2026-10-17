@@ -7,7 +7,7 @@
 - **README.md поддерживать в актуальном состоянии**: при каждом заметном изменении (новый этап, новый проект в решении, изменился способ запуска) обновлять его в том же коммите.
 
 - Автор — школьник (знает C++, немного C#, SQL, Node.js), помогает папа. Цель — не только сделать, но и **понять**: объяснять решения, термины C#/.NET, предлагать варианты с аргументами, спрашивать перед каждым этапом.
-- Требования собраны (см. ниже и `docs/`). Работаем по этапам из `PLAN.md`; перед каждым этапом обсуждаем, что и как делаем. Этап 0 закрыт (Dev Tunnel отложен до этапа 2). Этап 1 закрыт: модель данных, миграции, тестовые данные. Сейчас — этап 2 (вход и роли): часть 1 готова (MudBlazor, cookie-вход, роли, переключение роли, выход, вход разработчика); впереди часть 2 — вход по QR через бота, часть 3 — Dev Tunnel и мини-приложение.
+- Требования собраны (см. ниже и `docs/`). Работаем по этапам из `PLAN.md`; перед каждым этапом обсуждаем, что и как делаем. Этап 0 закрыт (Dev Tunnel отложен до этапа 2). Этап 1 закрыт: модель данных, миграции, тестовые данные. Сейчас — этап 2 (вход и роли): часть 1 (MudBlazor, cookie-вход, роли, переключение роли, выход, вход разработчика) и часть 2 (вход по QR через бота, регистрация по телефону) готовы; впереди часть 3 — Dev Tunnel и мини-приложение.
 - Решение: `Erudit.slnx`, проекты в `src/` и `tests/`. Сборка `dotnet build`, тесты `dotnet test`, запуск `dotnet run --project src/Erudit.Web` (http://localhost:5067).
 - Срок: около года (до осени 2027).
 - Нужен git.
@@ -89,13 +89,16 @@
 - Cookie ставится только HTTP-адресами `/auth/*` (`Erudit.Web/Auth/AuthEndpoints.cs`), не через SignalR. Формы на страницах — обычный `<form method="post">` с `<AntiforgeryToken />`.
 - `SignInService` — единая точка входа для всех способов (разработчик, QR, мини-приложение).
 - Роли в интерфейсе (`AppRoles`): Teacher, ClassTeacher (вычисляется: ведёт класс в текущем учебном году), HeadTeacher, Admin, Parent, Student. В cookie одна **активная** роль (`ClaimTypes.Role`, по ней `[Authorize(Roles = ...)]`) и список доступных (`erudit:available_role`). Переключение роли — в меню пользователя (POST `/auth/switch-role`); меню слева показывает разделы только активной роли. При входе активна первая по приоритету: Teacher → ClassTeacher → HeadTeacher → Admin → Parent → Student.
+- **Вход по QR (проверено на живом боте 2026-10-17):** страница `/login` создаёт `LoginRequest` (токен в QR-ссылке `https://max.ru/<бот>?start=login_<токен>`, секрет — только в странице, в БД его SHA-256), опрашивает статус раз в 2 с; бот (`BotUpdateHandler`) регистрирует незнакомого по кнопке `request_contact` и спрашивает «Войти на сайт как …? Устройство: Windows, Chrome» кнопками callback; после «Да» страница уходит на `GET /auth/complete?id=&secret=&persistent=` → cookie. QR живёт 3 мин, после подтверждения — 2 мин на завершение; запрос одноразовый. Запрос создаётся в `OnAfterRenderAsync(firstRender)`, а не в `OnInitializedAsync` (иначе пререндер создаст два запроса).
+- Журнал (`audit_log`): `Person/MaxLinked`, `Person/LoginConfirmed`, `Registration/PhoneNotFound` (номер не найден — для администратора).
 - Вход разработчика `/dev/login` (POST `/auth/dev-login`) — только в Development, на рабочем сервере адреса нет.
 - `Dev:MyPhone` в User Secrets `Erudit.Web` → при старте в Development номер получает тестовый администратор Зайцев А.П. (для проверки входа через MAX).
 - `PhoneNumber.Normalize` (Domain): любые записи номера → `+7XXXXXXXXXX`.
 - Страницы получают данные через `IDbContextFactory<EruditDbContext>` (контекст на одну операцию: в Blazor Server страница живёт долго).
 - MudBlazor 9: у `MudMenu` своя кнопка в `ActivatorContent` должна сама вызывать `menu.ToggleAsync`.
 - Превью в браузере: `.claude/launch.json`, конфигурация `erudit-web` (порт 5067, без сборки — сначала `dotnet build`).
-- Тесты с базой падают с «must be a superuser to terminate superuser process», если к `erudit_test` подключён pgAdmin под `postgres` — закрыть соединение в pgAdmin.
+- Тестовая база не удаляется, если уже есть: очищается схема `public` (так тесты работают даже при открытом pgAdmin).
+- Тесты бота — с поддельным `IMaxBotClient` (`tests/Erudit.Tests/Max/BotLoginTests.cs`); тестовый проект ссылается и на `Erudit.Web`.
 
 ### Справочники
 - Классы (7А, 9Б), предметы, связь учитель ↔ предметы ↔ классы.
@@ -160,7 +163,10 @@
 - Реальный формат событий (из лога, 2026-10-17):
   - `bot_started`: `chat_id`, `user{user_id, first_name, last_name, name, is_bot}`, `payload` (только если открыли ссылку с `?start=`), `user_locale`, `timestamp` (мс).
   - `message_created`: `message{sender{user_id, first_name, ...}, recipient{chat_type:"dialog", chat_id, user_id}, body{mid, seq, text}, timestamp}`, `user_locale`.
-- Код: `Erudit.Infrastructure/Max/` — `MaxBotClient` (HTTP-клиент), `MaxLongPollingService` (фоновая служба, включается `Max:UseLongPolling=true` в `appsettings.Development.json`).
+  - `message_callback` (кнопка callback): `callback{callback_id, payload, user{user_id, ...}, timestamp}`, `message` (сообщение с кнопкой). Ответ — `POST /answers?callback_id=` с `{"message": {...}}`: заменяет сообщение, пустой `attachments` убирает кнопки.
+  - Контакт (кнопка `request_contact`) приходит как `message_created` с вложением `{"type":"contact","payload":{"vcf_info":"BEGIN:VCARD\r\n...TEL;TYPE=cell:7999...\r\n...","max_info":{"user_id",...},"hash":"<64 hex>"}}`. `hash` = **hex(HMAC-SHA256(ключ: токен бота, сообщение: vcf_info))** — проверено на живом боте.
+  - Кнопки: `{"type":"callback","text","payload"}`, `{"type":"request_contact","text"}`, вложение `{"type":"inline_keyboard","payload":{"buttons":[[...]]}}`.
+- Код: `Erudit.Infrastructure/Max/` — `IMaxBotClient`/`MaxBotClient` (HTTP-клиент), `MaxMessage`/`MaxButton`, `MaxContact` (проверка контакта), `BotUpdateHandler` (логика бота), `MaxLongPollingService` (фоновая служба, включается `Max:UseLongPolling=true` в `appsettings.Development.json`; полный JSON событий пишет на уровне Debug — в нём персональные данные). Имя бота для ссылок — `Max:BotUsername` в `appsettings.json`.
 
 ### Посещаемость и учёт времени
 - Учитель отмечает занятие проведённым и посещаемость каждого записанного ученика (присутствовал / отсутствовал).

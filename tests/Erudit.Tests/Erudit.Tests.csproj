@@ -24,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Erudit.Domain\Erudit.Domain.csproj" />
     <ProjectReference Include="..\..\src\Erudit.Infrastructure\Erudit.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Erudit.Web\Erudit.Web.csproj" />
   </ItemGroup>
 
 </Project>

@@ -11,6 +11,9 @@ public sealed class MaxOptions
     /// <summary>Токен бота. Хранится только в User Secrets / переменных окружения.</summary>
     public string BotToken { get; set; } = "";
 
+    /// <summary>Имя бота без @ — для ссылок https://max.ru/имя?start=...</summary>
+    public string BotUsername { get; set; } = "";
+
     /// <summary>Адрес Bot API.</summary>
     public string ApiBaseUrl { get; set; } = "https://platform-api2.max.ru";
 

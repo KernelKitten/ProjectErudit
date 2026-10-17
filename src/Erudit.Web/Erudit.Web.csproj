@@ -11,6 +11,7 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="MudBlazor" Version="9.11.0" />
+    <PackageReference Include="QRCoder" Version="1.8.1" />
   </ItemGroup>
 
   <PropertyGroup>

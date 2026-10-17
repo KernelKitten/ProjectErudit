@@ -1,8 +1,10 @@
+using Erudit.Infrastructure.Auth;
 using Erudit.Infrastructure.Max;
 using Erudit.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Erudit.Infrastructure;
@@ -37,7 +39,7 @@ public static class DependencyInjection
 
         // Типизированный HttpClient: фабрика сама управляет соединениями,
         // а адрес и заголовок авторизации задаются один раз здесь.
-        services.AddHttpClient<MaxBotClient>((sp, http) =>
+        services.AddHttpClient<IMaxBotClient, MaxBotClient>((sp, http) =>
         {
             var options = sp.GetRequiredService<IOptions<MaxOptions>>().Value;
             http.BaseAddress = new Uri(options.ApiBaseUrl.TrimEnd('/') + "/");
@@ -45,6 +47,10 @@ public static class DependencyInjection
             // Long polling держит запрос до 30 с — оставляем запас.
             http.Timeout = TimeSpan.FromSeconds(60);
         });
+
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<BotUpdateHandler>();
+        services.AddSingleton<LoginRequestService>();
 
         var useLongPolling = configuration.GetValue<bool>($"{MaxOptions.SectionName}:{nameof(MaxOptions.UseLongPolling)}");
         if (useLongPolling)

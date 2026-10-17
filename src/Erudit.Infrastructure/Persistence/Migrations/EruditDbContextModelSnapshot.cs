@@ -427,6 +427,74 @@ namespace Erudit.Infrastructure.Persistence.Migrations
                     b.ToTable("series_enrollments", (string)null);
                 });
 
+            modelBuilder.Entity("Erudit.Domain.People.LoginRequest", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("ConfirmedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("confirmed_at");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DeviceInfo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("device_info");
+
+                    b.Property<long?>("MaxUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("max_user_id");
+
+                    b.Property<int?>("PersonId")
+                        .HasColumnType("integer")
+                        .HasColumnName("person_id");
+
+                    b.Property<string>("SecretHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("secret_hash");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("token");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("used_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_login_requests");
+
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("ix_login_requests_created_at");
+
+                    b.HasIndex("PersonId")
+                        .HasDatabaseName("ix_login_requests_person_id");
+
+                    b.HasIndex("Token")
+                        .IsUnique()
+                        .HasDatabaseName("ix_login_requests_token");
+
+                    b.ToTable("login_requests", (string)null);
+                });
+
             modelBuilder.Entity("Erudit.Domain.People.ParentLink", b =>
                 {
                     b.Property<int>("ParentId")
@@ -862,6 +930,17 @@ namespace Erudit.Infrastructure.Persistence.Migrations
                     b.Navigation("Series");
 
                     b.Navigation("Student");
+                });
+
+            modelBuilder.Entity("Erudit.Domain.People.LoginRequest", b =>
+                {
+                    b.HasOne("Erudit.Domain.People.Person", "Person")
+                        .WithMany()
+                        .HasForeignKey("PersonId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_login_requests_people_person_id");
+
+                    b.Navigation("Person");
                 });
 
             modelBuilder.Entity("Erudit.Domain.People.ParentLink", b =>
