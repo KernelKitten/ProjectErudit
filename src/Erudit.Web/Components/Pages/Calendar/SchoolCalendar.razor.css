@@ -1,0 +1,73 @@
+/* Стили только этой страницы (scoped CSS): Blazor сам добавляет к ним уникальный атрибут,
+   поэтому они не влияют на другие страницы. */
+
+.erudit-calendar {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+    max-width: 700px;
+}
+
+.erudit-calendar-head {
+    text-align: center;
+    font-weight: 500;
+    color: #666;
+    padding: 4px 0;
+}
+
+.erudit-calendar-day {
+    position: relative;
+    aspect-ratio: 1.2;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 4px 6px;
+    background: #fff;
+    cursor: pointer;
+}
+
+.erudit-calendar-number {
+    font-size: 1.05rem;
+}
+
+.erudit-other-month {
+    opacity: 0.4;
+}
+
+.erudit-day-off {
+    color: #c62828;
+    background: #fdecea;
+}
+
+.erudit-vacation {
+    background: #fff4d6;
+    border-color: #f0b429;
+}
+
+.erudit-day-off.erudit-vacation {
+    background: linear-gradient(135deg, #fdecea 50%, #fff4d6 50%);
+}
+
+.erudit-vacation-part {
+    border: 2px dashed #f0b429;
+}
+
+.erudit-today {
+    outline: 2px solid #1F3864;
+}
+
+::deep .erudit-calendar-manual {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    opacity: 0.6;
+}
+
+.erudit-legend {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 1px solid #e0e0e0;
+    border-radius: 3px;
+    margin-right: 6px;
+    vertical-align: middle;
+}

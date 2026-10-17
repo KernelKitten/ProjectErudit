@@ -1,0 +1,203 @@
+@page "/calendar"
+@attribute [Authorize]
+@using Erudit.Domain.Calendar
+@using Erudit.Infrastructure.Calendar
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject IServiceScopeFactory Scopes
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject TimeProvider Time
+
+<PageTitle>Календарь</PageTitle>
+
+<MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-2">
+    <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" OnClick="() => MoveAsync(-1)" aria-label="Предыдущий месяц" />
+    <MudText Typo="Typo.h5" Style="min-width: 200px; text-align: center">@_month.ToString("MMMM yyyy")</MudText>
+    <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" OnClick="() => MoveAsync(1)" aria-label="Следующий месяц" />
+    <MudButton Variant="Variant.Text" OnClick="TodayAsync">Сегодня</MudButton>
+    <MudSpacer />
+    @if (_canEdit)
+    {
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.CloudDownload" OnClick="LoadFromGitHubAsync"
+                   Disabled="_busy">Загрузить с GitHub</MudButton>
+        @* MudBlazor 9: своя кнопка внутри CustomContent сама открывает выбор файла — upload.OpenFilePickerAsync. *@
+        <MudFileUpload T="IBrowserFile" Accept=".json" FilesChanged="UploadAsync" Disabled="_busy">
+            <CustomContent Context="upload">
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.UploadFile" Disabled="_busy"
+                           OnClick="upload.OpenFilePickerAsync">Загрузить файл</MudButton>
+            </CustomContent>
+        </MudFileUpload>
+    }
+</MudStack>
+
+@if (_busy)
+{
+    <MudProgressLinear Indeterminate Class="mb-2" />
+}
+
+<div class="erudit-calendar">
+    @foreach (var name in DayNames)
+    {
+        <div class="erudit-calendar-head">@name</div>
+    }
+    @foreach (var cell in _cells)
+    {
+        <div class="@CellClass(cell)" title="@cell.Hint" @onclick="() => EditDayAsync(cell)">
+            <span class="erudit-calendar-number">@cell.Date.Day</span>
+            @if (cell.IsManual)
+            {
+                <MudIcon Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" Class="erudit-calendar-manual" />
+            }
+        </div>
+    }
+</div>
+
+<MudStack Row Wrap="Wrap.Wrap" Spacing="4" Class="mt-3">
+    <span><span class="erudit-legend erudit-day-off"></span>нерабочий день</span>
+    <span><span class="erudit-legend erudit-vacation"></span>каникулы</span>
+    <span><span class="erudit-legend erudit-vacation-part"></span>каникулы у части классов</span>
+    <span><MudIcon Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" Style="vertical-align: middle" /> исправлено вручную</span>
+</MudStack>
+@if (_canEdit)
+{
+    <MudText Typo="Typo.caption" Class="d-block mt-2">
+        Нажмите на день, чтобы сделать его рабочим или нерабочим. Календарь также обновляется сам каждый понедельник.
+    </MudText>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+
+    private static readonly string[] DayNames = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+
+    private sealed record Cell(DateOnly Date, bool InMonth, bool IsWorking, bool IsManual, bool IsToday,
+        bool VacationAll, bool VacationPart, string? Hint);
+
+    private DateOnly _today;
+    private DateOnly _month;
+    private List<Cell> _cells = [];
+    private bool _canEdit;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthState).User;
+        _canEdit = user.IsInRole(AppRoles.Admin) || user.IsInRole(AppRoles.HeadTeacher);
+        _today = DateOnly.FromDateTime(SchoolTime.ToSchool(Time.GetUtcNow().UtcDateTime));
+        _month = new DateOnly(_today.Year, _today.Month, 1);
+        await LoadAsync();
+    }
+
+    private async Task MoveAsync(int months)
+    {
+        _month = _month.AddMonths(months);
+        await LoadAsync();
+    }
+
+    private async Task TodayAsync()
+    {
+        _month = new DateOnly(_today.Year, _today.Month, 1);
+        await LoadAsync();
+    }
+
+    /// <summary>Сетка месяца: с понедельника недели, где 1-е число, до воскресенья недели, где последнее.</summary>
+    private async Task LoadAsync()
+    {
+        var first = _month.AddDays(-(((int)_month.DayOfWeek + 6) % 7));
+        var lastOfMonth = _month.AddMonths(1).AddDays(-1);
+        var last = lastOfMonth.AddDays(6 - (((int)lastOfMonth.DayOfWeek + 6) % 7));
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var days = await db.CalendarDays.Where(d => d.Date >= first && d.Date <= last).ToListAsync();
+        var vacations = await db.Vacations.Where(v => v.StartDate <= last && v.EndDate >= first).ToListAsync();
+        var calendar = new WorkingDayCalendar(days);
+        var manual = days.Where(d => d.IsManual).Select(d => d.Date).ToHashSet();
+
+        _cells = [];
+        for (var date = first; date <= last; date = date.AddDays(1))
+        {
+            var current = date;
+            var active = vacations.Where(v => current >= v.StartDate && current <= v.EndDate).ToList();
+            _cells.Add(new Cell(date, date.Month == _month.Month, calendar.IsWorkingDay(date), manual.Contains(date),
+                date == _today,
+                active.Any(v => v.GradeFrom is null && v.GradeTo is null),
+                active.Any(v => v.GradeFrom is not null || v.GradeTo is not null),
+                active.Count == 0 ? null : string.Join("; ", active.Select(v => v.Name))));
+        }
+    }
+
+    private static string CellClass(Cell c) => string.Join(' ', new[]
+    {
+        "erudit-calendar-day",
+        c.InMonth ? null : "erudit-other-month",
+        c.IsWorking ? null : "erudit-day-off",
+        c.VacationAll ? "erudit-vacation" : c.VacationPart ? "erudit-vacation-part" : null,
+        c.IsToday ? "erudit-today" : null,
+    }.Where(s => s is not null));
+
+    private async Task EditDayAsync(Cell cell)
+    {
+        if (!_canEdit)
+        {
+            return;
+        }
+        var dialog = await DialogService.ShowAsync<CalendarDayDialog>("День календаря",
+            new DialogParameters<CalendarDayDialog>
+            {
+                { d => d.Date, cell.Date },
+                { d => d.IsWorking, cell.IsWorking },
+                { d => d.IsManual, cell.IsManual },
+            },
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: CalendarDayDialog.CalendarDayAction.Reset })
+        {
+            await LoadFromGitHubAsync(); // узнаём из файла, каким день должен быть
+        }
+        else if (result is { Canceled: false })
+        {
+            await LoadAsync();
+        }
+    }
+
+    private Task LoadFromGitHubAsync() => RunImportAsync(scope =>
+        scope.ServiceProvider.GetRequiredService<ProductionCalendarJob>().RunAsync());
+
+    private async Task UploadAsync(IBrowserFile? file)
+    {
+        if (file is null)
+        {
+            return;
+        }
+        // Файл приходит из браузера по сети; читаем целиком в память (календарь — около 50 КБ).
+        var buffer = new MemoryStream();
+        await file.OpenReadStream(maxAllowedSize: 1024 * 1024).CopyToAsync(buffer);
+        buffer.Position = 0;
+        await RunImportAsync(scope => scope.ServiceProvider.GetRequiredService<ProductionCalendarImporter>().ImportAsync(buffer));
+    }
+
+    /// <summary>
+    /// Загрузка в отдельной «области» (scope): свой DbContext на одну операцию, а не на всё время жизни страницы.
+    /// В журнал изменений загрузка попадёт с автором — текущим пользователем.
+    /// </summary>
+    private async Task RunImportAsync(Func<IServiceScope, Task<CalendarImportResult>> import)
+    {
+        _busy = true;
+        try
+        {
+            await using var scope = Scopes.CreateAsyncScope();
+            scope.ServiceProvider.GetRequiredService<EruditDbContext>().CurrentPersonId = (await AuthState).User.GetPersonId();
+            var result = await import(scope);
+            Snackbar.Add($"Календарь загружен. {result}", Severity.Success);
+        }
+        catch (Exception ex) when (ex is FormatException or HttpRequestException)
+        {
+            Snackbar.Add($"Не удалось загрузить календарь: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+        await LoadAsync();
+    }
+}

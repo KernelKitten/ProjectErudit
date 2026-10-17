@@ -4,6 +4,7 @@ using Erudit.Infrastructure.Persistence;
 using Erudit.Infrastructure.Persistence.Seed;
 using Erudit.Web.Auth;
 using Erudit.Web.Components;
+using Hangfire;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using MudBlazor.Services;
 
@@ -81,6 +82,13 @@ app.UseAntiforgery();
 
 app.MapStaticAssets();
 app.MapAuthEndpoints();
+app.Services.ScheduleRecurringJobs();
+app.MapHangfireDashboard("/hangfire", new DashboardOptions
+{
+    Authorization = [new HangfireAdminFilter()],
+    DashboardTitle = "Эрудит · фоновые задачи",
+    AppPath = "/admin", // куда ведёт ссылка «назад на сайт»
+});
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

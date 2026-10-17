@@ -25,6 +25,8 @@
                 break;
         }
 
+        <MudNavLink Href="calendar" Icon="@Icons.Material.Outlined.CalendarMonth">Календарь</MudNavLink>
+
         @if (role is AppRoles.Admin or AppRoles.HeadTeacher)
         {
             <MudNavGroup Title="Справочники" Icon="@Icons.Material.Outlined.MenuBook" Expanded>

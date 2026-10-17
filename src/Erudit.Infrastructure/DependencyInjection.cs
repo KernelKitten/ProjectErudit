@@ -1,4 +1,7 @@
 using Erudit.Infrastructure.Auth;
+using Erudit.Infrastructure.Calendar;
+using Hangfire;
+using Hangfire.PostgreSql;
 using Erudit.Infrastructure.Max;
 using Erudit.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -48,6 +51,19 @@ public static class DependencyInjection
             http.Timeout = TimeSpan.FromSeconds(60);
         });
 
+        // Производственный календарь: загрузчик и фоновая задача.
+        services.AddOptions<CalendarOptions>().Bind(configuration.GetSection(CalendarOptions.SectionName));
+        services.AddScoped<ProductionCalendarImporter>();
+        services.AddHttpClient<ProductionCalendarJob>();
+
+        // Hangfire — фоновые задачи по расписанию. Задачи хранятся в той же базе, в отдельной схеме "hangfire":
+        // если сервер перезапустится, расписание и история не потеряются.
+        services.AddHangfire(config => config
+            .UseRecommendedSerializerSettings()
+            .UsePostgreSqlStorage(storage => storage.UseNpgsqlConnection(connectionString),
+                new PostgreSqlStorageOptions { SchemaName = "hangfire", PrepareSchemaIfNecessary = true }));
+        services.AddHangfireServer();
+
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<BotUpdateHandler>();
         services.AddScoped<PersonRegistration>();
@@ -60,5 +76,15 @@ public static class DependencyInjection
         }
 
         return services;
+    }
+
+    /// <summary>Расписание фоновых задач. Вызывается один раз при старте; AddOrUpdate не создаёт дублей.</summary>
+    public static void ScheduleRecurringJobs(this IServiceProvider services)
+    {
+        var jobs = services.GetRequiredService<IRecurringJobManager>();
+        // Каждый понедельник в 04:00 по школьному времени.
+        jobs.AddOrUpdate<ProductionCalendarJob>(ProductionCalendarJob.RecurringJobId,
+            job => job.RunAsync(CancellationToken.None), "0 4 * * 1",
+            new RecurringJobOptions { TimeZone = Erudit.Domain.SchoolTime.Zone });
     }
 }

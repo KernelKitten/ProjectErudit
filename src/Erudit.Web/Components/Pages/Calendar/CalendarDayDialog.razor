@@ -1,0 +1,67 @@
+@* Правка одного дня производственного календаря (администратор, завуч). *@
+@using Erudit.Domain.Calendar
+@inject IDbContextFactory<EruditDbContext> DbFactory
+
+<MudDialog>
+    <DialogContent>
+        <MudText Class="mb-2">@Date.ToString("dddd, d MMMM yyyy")</MudText>
+        <MudRadioGroup T="bool" @bind-Value="_isWorking">
+            <MudRadio T="bool" Value="true" Color="Color.Primary">Рабочий день</MudRadio>
+            <MudRadio T="bool" Value="false" Color="Color.Error">Нерабочий день</MudRadio>
+        </MudRadioGroup>
+        <MudText Typo="Typo.caption" Class="d-block mt-2">
+            Ручная правка сохранится и при следующих загрузках производственного календаря.
+        </MudText>
+    </DialogContent>
+    <DialogActions>
+        @if (IsManual)
+        {
+            <MudButton OnClick="ResetAsync" Color="Color.Secondary">Вернуть как в календаре</MudButton>
+        }
+        <MudSpacer />
+        <MudButton OnClick="() => Dialog.Cancel()">Отмена</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveAsync">Сохранить</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+
+    [Parameter] public DateOnly Date { get; set; }
+    [Parameter] public bool IsWorking { get; set; }
+    [Parameter] public bool IsManual { get; set; }
+
+    private bool _isWorking;
+
+    protected override void OnInitialized() => _isWorking = IsWorking;
+
+    private async Task SaveAsync()
+    {
+        await using var db = await DbFactory.CreateForAsync((await AuthState).User);
+        var day = await db.CalendarDays.SingleOrDefaultAsync(d => d.Date == Date)
+                  ?? db.CalendarDays.Add(new CalendarDay { Date = Date }).Entity;
+        day.IsWorkingDay = _isWorking;
+        day.IsManual = true;
+        await db.SaveChangesAsync();
+        Dialog.Close(DialogResult.Ok(CalendarDayAction.Saved));
+    }
+
+    /// <summary>
+    /// Убираем ручную правку. Каким день должен быть «по календарю», знает только файл —
+    /// поэтому страница после этого загружает календарь заново.
+    /// </summary>
+    private async Task ResetAsync()
+    {
+        await using var db = await DbFactory.CreateForAsync((await AuthState).User);
+        var day = await db.CalendarDays.SingleOrDefaultAsync(d => d.Date == Date);
+        if (day is not null)
+        {
+            db.CalendarDays.Remove(day);
+            await db.SaveChangesAsync();
+        }
+        Dialog.Close(DialogResult.Ok(CalendarDayAction.Reset));
+    }
+
+    public enum CalendarDayAction { Saved, Reset }
+}
