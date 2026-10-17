@@ -62,7 +62,7 @@
 - Один сайт, два входа: в браузере — по QR-коду / ссылке через бота (одноразовый токен, подтверждение кнопкой в боте); в мини-приложении MAX (это тот же сайт) — автоматически по `initData`.
 - Учителя/завуч/админ работают в основном в браузере на ноутбуке, ученики/родители — в мини-приложении. Страницы адаптивные.
 - Телефон нужен один раз при регистрации (связать MAX id с человеком в базе); дальше опознаём по MAX id.
-- Проверить на практике: работает ли deep link бота с параметром `?start=` (документация MAX неполная).
+- **Проверено 2026-10-17:** ссылка `https://max.ru/id231107791231_bot?start=<payload>` присылает боту `bot_started` с полем `payload` — и для нового пользователя, и для уже открытого диалога (два разных телефона). Вход по QR через бота реализуем.
 - UI-библиотека: MudBlazor (предварительно).
 - Один бот на всех: `@id231107791231_bot` (создан 2026-10-17). Ссылки: `https://max.ru/id231107791231_bot`, мини-приложение — `...?startapp`. Токен — только в User Secrets.
 
@@ -124,7 +124,12 @@
 - `window.WebApp.initData` содержит `user` (id, имя, фамилия, username, фото), `chat`, `auth_date`, `hash`. Телефона в initData нет.
 - Проверка на сервере: `secret = HMAC_SHA256(key="WebAppData", msg=botToken)`, пары `key=value` без `hash` сортируются по ключу и склеиваются через `\n`, `hex(HMAC_SHA256(secret, строка)) == hash`. Свежесть `auth_date` проверяем сами.
 - `WebApp.requestContact()` отдаёт телефон пользователя с подписью (`phone`, `authDate`, `hash`), подпись проверяется на сервере тем же способом.
-- Токен бота — только на сервере, никогда в git.
+- Токен бота — только на сервере, никогда в git. Ключ в User Secrets: `Max:BotToken`.
+- Bot API: `https://platform-api2.max.ru`, заголовок `Authorization: <токен>`. `GET /me`, `GET /updates?timeout=&marker=` (long polling — по документации только для разработки, в рабочей версии webhook `POST /subscriptions`), `POST /messages?user_id=` с телом `{"text": ...}` (не больше 2 сообщений в секунду в один диалог).
+- Реальный формат событий (из лога, 2026-10-17):
+  - `bot_started`: `chat_id`, `user{user_id, first_name, last_name, name, is_bot}`, `payload` (только если открыли ссылку с `?start=`), `user_locale`, `timestamp` (мс).
+  - `message_created`: `message{sender{user_id, first_name, ...}, recipient{chat_type:"dialog", chat_id, user_id}, body{mid, seq, text}, timestamp}`, `user_locale`.
+- Код: `Erudit.Infrastructure/Max/` — `MaxBotClient` (HTTP-клиент), `MaxLongPollingService` (фоновая служба, включается `Max:UseLongPolling=true` в `appsettings.Development.json`).
 
 ### Посещаемость и учёт времени
 - Учитель отмечает занятие проведённым и посещаемость каждого записанного ученика (присутствовал / отсутствовал).
