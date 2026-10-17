@@ -1,0 +1,73 @@
+@page "/directories/years"
+@attribute [Authorize(Roles = AppRoles.DirectoryManagers)]
+@using Erudit.Domain.School
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject IDialogService DialogService
+@inject TimeProvider Time
+
+<PageTitle>Учебные годы</PageTitle>
+
+<MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-2">
+    <MudText Typo="Typo.h5" Class="flex-grow-1">Учебные годы</MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="() => EditAsync(null)">
+        Добавить
+    </MudButton>
+</MudStack>
+<MudText Typo="Typo.body2" Class="mb-4">Перевод всей школы на новый учебный год — отдельной кнопкой (будет позже на этом этапе).</MudText>
+
+<MudTable Items="_years" Dense Hover Loading="_years is null">
+    <HeaderContent>
+        <MudTh>Учебный год</MudTh>
+        <MudTh>Даты</MudTh>
+        <MudTh>Классов</MudTh>
+        <MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Учебный год">
+            @context.Year.Name
+            @if (context.Year.Contains(_today))
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Success" Class="ml-2">текущий</MudChip>
+            }
+        </MudTd>
+        <MudTd DataLabel="Даты">@context.Year.StartDate.ToString("dd.MM.yyyy") — @context.Year.EndDate.ToString("dd.MM.yyyy")</MudTd>
+        <MudTd DataLabel="Классов">@context.Classes</MudTd>
+        <MudTd Style="text-align: right">
+            <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Изменить"
+                           OnClick="() => EditAsync(context.Year.Id)" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>Учебных годов пока нет. Нажмите «Добавить».</NoRecordsContent>
+</MudTable>
+
+@code {
+    private List<(AcademicYear Year, int Classes)>? _years;
+    private DateOnly _today;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _today = DateOnly.FromDateTime(SchoolTime.ToSchool(Time.GetUtcNow().UtcDateTime));
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var rows = await db.AcademicYears
+            .OrderByDescending(y => y.StartDate)
+            .Select(y => new { Year = y, Classes = db.SchoolClasses.Count(c => c.AcademicYearId == y.Id) })
+            .ToListAsync();
+        _years = rows.Select(r => (r.Year, r.Classes)).ToList();
+    }
+
+    private async Task EditAsync(int? id)
+    {
+        var dialog = await DialogService.ShowAsync<AcademicYearDialog>(id is null ? "Новый учебный год" : "Учебный год",
+            new DialogParameters<AcademicYearDialog> { { d => d.YearId, id } },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            await LoadAsync();
+        }
+    }
+}

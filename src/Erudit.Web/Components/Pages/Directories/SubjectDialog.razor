@@ -1,0 +1,90 @@
+@* Диалог «новый предмет / изменить предмет». Открывается со страницы Subjects.razor:
+   DialogService.ShowAsync<SubjectDialog>(...). Сам сохраняет в базу и закрывается с результатом Ok. *@
+@using Erudit.Domain.School
+@inject IDbContextFactory<EruditDbContext> DbFactory
+
+<MudDialog>
+    <DialogContent>
+        @* MudForm следит за правилами полей (Required, Validation) и выставляет _valid. *@
+        <MudForm @ref="_form" @bind-IsValid="_valid">
+            <MudTextField @bind-Value="_name" Label="Название" Required RequiredError="Укажите название"
+                          MaxLength="100" Immediate AutoFocus />
+            <MudTextField @bind-Value="_shortName" Label="Сокращение" HelperText="Как в школьном расписании: «Матем», «Англ.яз»"
+                          MaxLength="30" />
+            <MudCheckBox @bind-Value="_isActive" Label="Используется (неиспользуемые скрыты из выбора при создании занятий)" />
+        </MudForm>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense Class="mt-2">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Отмена</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveAsync" Disabled="_saving">Сохранить</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    // Диалог получает «ручку» на самого себя, чтобы закрыться с результатом.
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+
+    /// <summary>Какой предмет правим; пусто — новый.</summary>
+    [Parameter] public int? SubjectId { get; set; }
+
+    private MudForm? _form;
+    private bool _valid;
+    private bool _saving;
+    private string? _error;
+    private string _name = "";
+    private string? _shortName;
+    private bool _isActive = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (SubjectId is null)
+        {
+            return;
+        }
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var subject = await db.Subjects.SingleAsync(s => s.Id == SubjectId);
+        (_name, _shortName, _isActive) = (subject.Name, subject.ShortName, subject.IsActive);
+    }
+
+    private async Task SaveAsync()
+    {
+        await _form!.ValidateAsync();
+        if (!_valid)
+        {
+            return;
+        }
+
+        _saving = true;
+        _error = null;
+        try
+        {
+            await using var db = await DbFactory.CreateForAsync((await AuthState).User);
+            var name = _name.Trim();
+
+            // Название уникально — проверяем заранее, чтобы показать понятную ошибку, а не исключение базы.
+            if (await db.Subjects.AnyAsync(s => s.Name == name && s.Id != SubjectId))
+            {
+                _error = $"Предмет «{name}» уже есть.";
+                return;
+            }
+
+            var subject = SubjectId is null ? db.Subjects.Add(new Subject()).Entity
+                : await db.Subjects.SingleAsync(s => s.Id == SubjectId);
+            subject.Name = name;
+            subject.ShortName = string.IsNullOrWhiteSpace(_shortName) ? null : _shortName.Trim();
+            subject.IsActive = _isActive;
+            await db.SaveChangesAsync();
+
+            Dialog.Close(DialogResult.Ok(true));
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

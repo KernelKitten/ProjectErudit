@@ -31,6 +31,7 @@ public static class DevDataSeeder
         {
             return false;
         }
+        db.AuditEnabled = false; // тысячи строк тестовых данных в журнал не пишем
 
         var random = new Random(2026);
         var phones = new PhoneSequence();

@@ -1,0 +1,59 @@
+@page "/directories/bells"
+@attribute [Authorize(Roles = AppRoles.DirectoryManagers)]
+@using Erudit.Domain.School
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject IDialogService DialogService
+
+<PageTitle>Звонки</PageTitle>
+
+<MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-2">
+    <MudText Typo="Typo.h5" Class="flex-grow-1">Расписание звонков</MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="() => EditAsync(null)">
+        Добавить урок
+    </MudButton>
+</MudStack>
+<MudText Typo="Typo.body2" Class="mb-4">Одно расписание на всю школу. 0-й урок — короткие занятия до первого урока в начальной школе.</MudText>
+
+<MudTable Items="_periods" Dense Hover Loading="_periods is null">
+    <HeaderContent>
+        <MudTh>Урок</MudTh>
+        <MudTh>Начало</MudTh>
+        <MudTh>Конец</MudTh>
+        <MudTh>Минут</MudTh>
+        <MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Урок">@context.Number</MudTd>
+        <MudTd DataLabel="Начало">@context.Start.ToString("HH:mm")</MudTd>
+        <MudTd DataLabel="Конец">@context.End.ToString("HH:mm")</MudTd>
+        <MudTd DataLabel="Минут">@context.DurationMinutes</MudTd>
+        <MudTd Style="text-align: right">
+            <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Изменить"
+                           OnClick="() => EditAsync(context.Number)" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>Звонков пока нет. Нажмите «Добавить урок».</NoRecordsContent>
+</MudTable>
+
+@code {
+    private List<LessonPeriod>? _periods;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _periods = await db.LessonPeriods.OrderBy(p => p.Number).ToListAsync();
+    }
+
+    private async Task EditAsync(int? number)
+    {
+        var dialog = await DialogService.ShowAsync<BellDialog>(number is null ? "Новый урок" : $"{number}-й урок",
+            new DialogParameters<BellDialog> { { d => d.Number, number } },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            await LoadAsync();
+        }
+    }
+}

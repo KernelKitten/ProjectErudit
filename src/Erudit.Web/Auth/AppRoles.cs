@@ -16,6 +16,9 @@ public static class AppRoles
     public const string Parent = "Parent";
     public const string Student = "Student";
 
+    /// <summary>Кто ведёт справочники школы: [Authorize(Roles = AppRoles.DirectoryManagers)].</summary>
+    public const string DirectoryManagers = Admin + "," + HeadTeacher;
+
     /// <summary>Порядок важен: при входе активной становится первая доступная роль из этого списка.</summary>
     public static readonly IReadOnlyList<string> ByPriority = [Teacher, ClassTeacher, HeadTeacher, Admin, Parent, Student];
 

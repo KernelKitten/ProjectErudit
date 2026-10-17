@@ -1,0 +1,84 @@
+@page "/directories/vacations"
+@attribute [Authorize(Roles = AppRoles.DirectoryManagers)]
+@using Erudit.Domain.Calendar
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject IDialogService DialogService
+
+<PageTitle>Каникулы</PageTitle>
+
+<MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h5" Class="flex-grow-1">Каникулы</MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="() => EditAsync(null)">
+        Добавить
+    </MudButton>
+</MudStack>
+
+<MudTable Items="_vacations" Dense Hover Loading="_vacations is null">
+    <HeaderContent>
+        <MudTh>Название</MudTh>
+        <MudTh>Даты</MudTh>
+        <MudTh>Для кого</MudTh>
+        <MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Название">@context.Name</MudTd>
+        <MudTd DataLabel="Даты">@context.StartDate.ToString("dd.MM.yyyy") — @context.EndDate.ToString("dd.MM.yyyy")</MudTd>
+        <MudTd DataLabel="Для кого">@Audience(context)</MudTd>
+        <MudTd Style="text-align: right; white-space: nowrap">
+            <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Изменить"
+                           OnClick="() => EditAsync(context.Id)" />
+            <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Удалить"
+                           OnClick="() => DeleteAsync(context)" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>Каникул пока нет. Нажмите «Добавить».</NoRecordsContent>
+</MudTable>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+    private List<Vacation>? _vacations;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _vacations = await db.Vacations.OrderByDescending(v => v.StartDate).ToListAsync();
+    }
+
+    private static string Audience(Vacation v) => (v.GradeFrom, v.GradeTo) switch
+    {
+        (null, null) => "вся школа",
+        var (from, to) when from == to => from == 0 ? "подготовительная группа" : $"{from}-е классы",
+        var (from, to) => $"{from ?? 0}–{to ?? 11} классы",
+    };
+
+    private async Task EditAsync(int? id)
+    {
+        var dialog = await DialogService.ShowAsync<VacationDialog>(id is null ? "Новые каникулы" : "Каникулы",
+            new DialogParameters<VacationDialog> { { d => d.VacationId, id } },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            await LoadAsync();
+        }
+    }
+
+    /// <summary>
+    /// Каникулы можно удалить по-настоящему: от них ничего не зависит (они только подсвечиваются).
+    /// Удаление всё равно попадёт в журнал изменений.
+    /// </summary>
+    private async Task DeleteAsync(Vacation vacation)
+    {
+        var confirmed = await DialogService.ShowMessageBoxAsync("Удалить каникулы?",
+            $"«{vacation.Name}» ({vacation.StartDate:dd.MM} — {vacation.EndDate:dd.MM})", yesText: "Удалить", cancelText: "Отмена");
+        if (confirmed != true)
+        {
+            return;
+        }
+        await using var db = await DbFactory.CreateForAsync((await AuthState).User);
+        db.Vacations.Remove(await db.Vacations.SingleAsync(v => v.Id == vacation.Id));
+        await db.SaveChangesAsync();
+        await LoadAsync();
+    }
+}

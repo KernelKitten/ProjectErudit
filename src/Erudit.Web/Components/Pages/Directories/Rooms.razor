@@ -1,0 +1,68 @@
+@page "/directories/rooms"
+@attribute [Authorize(Roles = AppRoles.DirectoryManagers)]
+@using Erudit.Domain.School
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject IDialogService DialogService
+
+<PageTitle>Кабинеты</PageTitle>
+
+<MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h5" Class="flex-grow-1">Кабинеты</MudText>
+    <MudSwitch T="bool" Value="_showInactive" ValueChanged="ToggleInactiveAsync" Label="Показывать неиспользуемые" Color="Color.Primary" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="() => EditAsync(null)">
+        Добавить
+    </MudButton>
+</MudStack>
+
+<MudTable Items="_rooms" Dense Hover Loading="_rooms is null">
+    <HeaderContent>
+        <MudTh>Кабинет</MudTh>
+        <MudTh>Этаж</MudTh>
+        <MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Кабинет">
+            @context.Name
+            @if (!context.IsActive)
+            {
+                <MudChip T="string" Size="Size.Small" Class="ml-2">не используется</MudChip>
+            }
+        </MudTd>
+        <MudTd DataLabel="Этаж">@context.Floor</MudTd>
+        <MudTd Style="text-align: right">
+            <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Изменить"
+                           OnClick="() => EditAsync(context.Id)" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>Кабинетов пока нет. Нажмите «Добавить».</NoRecordsContent>
+</MudTable>
+
+@code {
+    private List<Room>? _rooms;
+    private bool _showInactive;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _rooms = await db.Rooms.Where(r => _showInactive || r.IsActive).OrderBy(r => r.Name).ToListAsync();
+    }
+
+    private async Task ToggleInactiveAsync(bool value)
+    {
+        _showInactive = value;
+        await LoadAsync();
+    }
+
+    private async Task EditAsync(int? id)
+    {
+        var dialog = await DialogService.ShowAsync<RoomDialog>(id is null ? "Новый кабинет" : "Кабинет",
+            new DialogParameters<RoomDialog> { { d => d.RoomId, id } },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            await LoadAsync();
+        }
+    }
+}

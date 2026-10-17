@@ -1,0 +1,69 @@
+@using Erudit.Domain.School
+@inject IDbContextFactory<EruditDbContext> DbFactory
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="_valid">
+            <MudTextField @bind-Value="_name" Label="Кабинет" HelperText="Как в расписании: «Каб.31», «Спортзал»"
+                          Required RequiredError="Укажите кабинет" MaxLength="50" Immediate AutoFocus />
+            <MudNumericField @bind-Value="_floor" Label="Этаж" Min="0" Max="10" Clearable />
+            <MudCheckBox @bind-Value="_isActive" Label="Используется" />
+        </MudForm>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense Class="mt-2">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Отмена</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveAsync">Сохранить</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+    [Parameter] public int? RoomId { get; set; }
+
+    private MudForm? _form;
+    private bool _valid;
+    private string? _error;
+    private string _name = "";
+    private int? _floor;
+    private bool _isActive = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (RoomId is null)
+        {
+            return;
+        }
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var room = await db.Rooms.SingleAsync(r => r.Id == RoomId);
+        (_name, _floor, _isActive) = (room.Name, room.Floor, room.IsActive);
+    }
+
+    private async Task SaveAsync()
+    {
+        await _form!.ValidateAsync();
+        if (!_valid)
+        {
+            return;
+        }
+
+        await using var db = await DbFactory.CreateForAsync((await AuthState).User);
+        var name = _name.Trim();
+        if (await db.Rooms.AnyAsync(r => r.Name == name && r.Id != RoomId))
+        {
+            _error = $"Кабинет «{name}» уже есть.";
+            return;
+        }
+
+        var room = RoomId is null ? db.Rooms.Add(new Room()).Entity : await db.Rooms.SingleAsync(r => r.Id == RoomId);
+        room.Name = name;
+        room.Floor = _floor;
+        room.IsActive = _isActive;
+        await db.SaveChangesAsync();
+        Dialog.Close(DialogResult.Ok(true));
+    }
+}

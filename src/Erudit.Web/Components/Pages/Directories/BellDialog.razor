@@ -1,0 +1,95 @@
+@using Erudit.Domain.School
+@inject IDbContextFactory<EruditDbContext> DbFactory
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="_valid">
+            <MudNumericField @bind-Value="_number" Label="Номер урока" Min="0" Max="9" Disabled="Number is not null"
+                             HelperText="0 — занятия до первого урока (начальная школа)" Required RequiredError="Укажите номер" />
+            <MudStack Row>
+                <MudTimePicker Editable @bind-Time="_start" Label="Начало" Required RequiredError="Укажите начало" />
+                <MudTimePicker Editable @bind-Time="_end" Label="Конец" Required RequiredError="Укажите конец" />
+            </MudStack>
+        </MudForm>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense Class="mt-2">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Отмена</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveAsync">Сохранить</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+
+    /// <summary>Какой урок правим; пусто — новый.</summary>
+    [Parameter] public int? Number { get; set; }
+
+    private MudForm? _form;
+    private bool _valid;
+    private string? _error;
+    private int? _number;
+    // MudTimePicker работает с TimeSpan, а в базе TimeOnly — переводим при загрузке и сохранении.
+    private TimeSpan? _start;
+    private TimeSpan? _end;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _number = Number;
+        if (Number is null)
+        {
+            return;
+        }
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var period = await db.LessonPeriods.SingleAsync(p => p.Number == Number);
+        _start = period.Start.ToTimeSpan();
+        _end = period.End.ToTimeSpan();
+    }
+
+    private async Task SaveAsync()
+    {
+        await _form!.ValidateAsync();
+        if (!_valid)
+        {
+            return;
+        }
+
+        var start = TimeOnly.FromTimeSpan(_start!.Value);
+        var end = TimeOnly.FromTimeSpan(_end!.Value);
+        if (end <= start)
+        {
+            _error = "Урок должен заканчиваться позже, чем начинается.";
+            return;
+        }
+
+        await using var db = await DbFactory.CreateForAsync((await AuthState).User);
+        var others = await db.LessonPeriods.Where(p => p.Number != _number).ToListAsync();
+
+        if (Number is null && await db.LessonPeriods.AnyAsync(p => p.Number == _number))
+        {
+            _error = $"{_number}-й урок уже есть — измените его в списке.";
+            return;
+        }
+
+        // Уроки идут по порядку и не пересекаются: урок с меньшим номером заканчивается раньше, чем начинается этот.
+        var conflict = others.FirstOrDefault(p =>
+            (p.Number < _number && p.End > start) || (p.Number > _number && p.Start < end));
+        if (conflict is not null)
+        {
+            _error = $"Пересекается с {conflict.Number}-м уроком ({conflict.Start:HH:mm}–{conflict.End:HH:mm}).";
+            return;
+        }
+
+        var period = Number is null
+            ? db.LessonPeriods.Add(new LessonPeriod { Number = _number!.Value }).Entity
+            : await db.LessonPeriods.SingleAsync(p => p.Number == Number);
+        period.Start = start;
+        period.End = end;
+        await db.SaveChangesAsync();
+        Dialog.Close(DialogResult.Ok(true));
+    }
+}

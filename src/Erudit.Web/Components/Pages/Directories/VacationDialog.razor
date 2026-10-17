@@ -1,0 +1,99 @@
+@using Erudit.Domain.Calendar
+@inject IDbContextFactory<EruditDbContext> DbFactory
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="_valid">
+            <MudTextField @bind-Value="_name" Label="Название" Placeholder="Осенние каникулы"
+                          Required RequiredError="Укажите название" MaxLength="100" Immediate AutoFocus />
+            <MudStack Row>
+                <MudDatePicker Editable @bind-Date="_start" Label="С" Required RequiredError="Укажите начало" />
+                <MudDatePicker Editable @bind-Date="_end" Label="По (включительно)" Required RequiredError="Укажите конец" />
+            </MudStack>
+            <MudStack Row>
+                <MudSelect T="int?" @bind-Value="_gradeFrom" Label="Для классов с" Clearable Placeholder="все">
+                    @foreach (var g in Grades)
+                    {
+                        <MudSelectItem T="int?" Value="g">@GradeName(g)</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudSelect T="int?" @bind-Value="_gradeTo" Label="по" Clearable Placeholder="все">
+                    @foreach (var g in Grades)
+                    {
+                        <MudSelectItem T="int?" Value="g">@GradeName(g)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudStack>
+            <MudText Typo="Typo.caption">Параллели не указаны — каникулы для всей школы. Каникулы только подсвечиваются: занятия в эти дни можно ставить.</MudText>
+        </MudForm>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense Class="mt-2">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Отмена</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveAsync">Сохранить</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+    [Parameter] public int? VacationId { get; set; }
+
+    private static readonly int?[] Grades = Enumerable.Range(0, 12).Select(g => (int?)g).ToArray();
+    private static string GradeName(int? grade) => grade == 0 ? "подготовительной" : $"{grade}-го";
+
+    private MudForm? _form;
+    private bool _valid;
+    private string? _error;
+    private string _name = "";
+    // MudDatePicker работает с DateTime, а в базе DateOnly.
+    private DateTime? _start;
+    private DateTime? _end;
+    private int? _gradeFrom;
+    private int? _gradeTo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (VacationId is null)
+        {
+            return;
+        }
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var v = await db.Vacations.SingleAsync(x => x.Id == VacationId);
+        (_name, _gradeFrom, _gradeTo) = (v.Name, v.GradeFrom, v.GradeTo);
+        _start = v.StartDate.ToDateTime(TimeOnly.MinValue);
+        _end = v.EndDate.ToDateTime(TimeOnly.MinValue);
+    }
+
+    private async Task SaveAsync()
+    {
+        await _form!.ValidateAsync();
+        if (!_valid)
+        {
+            return;
+        }
+        if (_end < _start)
+        {
+            _error = "Каникулы заканчиваются раньше, чем начинаются.";
+            return;
+        }
+        if (_gradeFrom > _gradeTo)
+        {
+            _error = "Параллель «с» больше, чем «по».";
+            return;
+        }
+
+        await using var db = await DbFactory.CreateForAsync((await AuthState).User);
+        var v = VacationId is null ? db.Vacations.Add(new Vacation()).Entity : await db.Vacations.SingleAsync(x => x.Id == VacationId);
+        v.Name = _name.Trim();
+        v.StartDate = DateOnly.FromDateTime(_start!.Value);
+        v.EndDate = DateOnly.FromDateTime(_end!.Value);
+        v.GradeFrom = _gradeFrom;
+        v.GradeTo = _gradeTo;
+        await db.SaveChangesAsync();
+        Dialog.Close(DialogResult.Ok(true));
+    }
+}

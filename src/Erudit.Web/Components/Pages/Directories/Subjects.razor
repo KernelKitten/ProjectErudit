@@ -1,0 +1,77 @@
+@page "/directories/subjects"
+@attribute [Authorize(Roles = AppRoles.DirectoryManagers)]
+@using Erudit.Domain.School
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject IDialogService DialogService
+
+<PageTitle>Предметы</PageTitle>
+
+@* Wrap: на узком экране (телефон) элементы переносятся на следующую строку, а не обрезаются. *@
+<MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h5" Class="flex-grow-1">Предметы</MudText>
+    <MudSwitch T="bool" Value="_showInactive" ValueChanged="ToggleInactiveAsync" Label="Показывать неиспользуемые" Color="Color.Primary" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="() => EditAsync(null)">
+        Добавить
+    </MudButton>
+</MudStack>
+
+<MudTable Items="_subjects" Dense Hover Loading="_subjects is null">
+    <HeaderContent>
+        <MudTh>Название</MudTh>
+        <MudTh>Сокращение</MudTh>
+        <MudTh></MudTh>
+    </HeaderContent>
+    @* DataLabel — подпись поля в «мобильном» виде, когда таблица на телефоне превращается в карточки. *@
+    <RowTemplate>
+        <MudTd DataLabel="Название">
+            @context.Name
+            @if (!context.IsActive)
+            {
+                <MudChip T="string" Size="Size.Small" Class="ml-2">не используется</MudChip>
+            }
+        </MudTd>
+        <MudTd DataLabel="Сокращение">@context.ShortName</MudTd>
+        <MudTd Style="text-align: right">
+            <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Изменить"
+                           OnClick="() => EditAsync(context.Id)" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>Предметов пока нет. Нажмите «Добавить».</NoRecordsContent>
+</MudTable>
+
+@code {
+    private List<Subject>? _subjects;
+    private bool _showInactive;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _subjects = await db.Subjects
+            .Where(s => _showInactive || s.IsActive)
+            .OrderBy(s => s.Name)
+            .ToListAsync();
+    }
+
+    private async Task ToggleInactiveAsync(bool value)
+    {
+        _showInactive = value;
+        await LoadAsync();
+    }
+
+    /// <summary>Один и тот же диалог для добавления (id = null) и правки.</summary>
+    private async Task EditAsync(int? id)
+    {
+        var parameters = new DialogParameters<SubjectDialog> { { d => d.SubjectId, id } };
+        var dialog = await DialogService.ShowAsync<SubjectDialog>(id is null ? "Новый предмет" : "Предмет", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+
+        // Ждём, пока пользователь закроет диалог. Сохранили — перечитываем список.
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            await LoadAsync();
+        }
+    }
+}

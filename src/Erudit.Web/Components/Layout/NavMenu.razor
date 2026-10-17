@@ -24,5 +24,16 @@
                 <MudNavLink Href="student" Icon="@Icons.Material.Outlined.EventNote">Мои занятия</MudNavLink>
                 break;
         }
+
+        @if (role is AppRoles.Admin or AppRoles.HeadTeacher)
+        {
+            <MudNavGroup Title="Справочники" Icon="@Icons.Material.Outlined.MenuBook" Expanded>
+                <MudNavLink Href="directories/subjects">Предметы</MudNavLink>
+                <MudNavLink Href="directories/rooms">Кабинеты</MudNavLink>
+                <MudNavLink Href="directories/bells">Звонки</MudNavLink>
+                <MudNavLink Href="directories/vacations">Каникулы</MudNavLink>
+                <MudNavLink Href="directories/years">Учебные годы</MudNavLink>
+            </MudNavGroup>
+        }
     </MudNavMenu>
 </AuthorizeView>

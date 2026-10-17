@@ -1,0 +1,100 @@
+@using Erudit.Domain.School
+@inject IDbContextFactory<EruditDbContext> DbFactory
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="_valid">
+            <MudStack Row>
+                <MudDatePicker Editable Date="_start" DateChanged="StartChanged" Label="Начало" Required RequiredError="Укажите начало" />
+                <MudDatePicker Editable @bind-Date="_end" Label="Конец (включительно)" Required RequiredError="Укажите конец" />
+            </MudStack>
+            <MudTextField @bind-Value="_name" Label="Название" HelperText="Заполняется само по датам: «2026/27»"
+                          Required RequiredError="Укажите название" MaxLength="20" />
+        </MudForm>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense Class="mt-2">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Отмена</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveAsync">Сохранить</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+    [Parameter] public int? YearId { get; set; }
+
+    private MudForm? _form;
+    private bool _valid;
+    private string? _error;
+    private string _name = "";
+    private DateTime? _start;
+    private DateTime? _end;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (YearId is null)
+        {
+            return;
+        }
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var y = await db.AcademicYears.SingleAsync(x => x.Id == YearId);
+        _name = y.Name;
+        _start = y.StartDate.ToDateTime(TimeOnly.MinValue);
+        _end = y.EndDate.ToDateTime(TimeOnly.MinValue);
+    }
+
+    /// <summary>Выбрали начало — предлагаем 1 сентября … 31 августа и название «2026/27».</summary>
+    private void StartChanged(DateTime? start)
+    {
+        _start = start;
+        if (start is { } s)
+        {
+            _end ??= new DateTime(s.Year + 1, 8, 31);
+            _name = $"{s.Year}/{(s.Year + 1) % 100:D2}";
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        await _form!.ValidateAsync();
+        if (!_valid)
+        {
+            return;
+        }
+        var start = DateOnly.FromDateTime(_start!.Value);
+        var end = DateOnly.FromDateTime(_end!.Value);
+        if (end <= start)
+        {
+            _error = "Учебный год заканчивается раньше, чем начинается.";
+            return;
+        }
+
+        await using var db = await DbFactory.CreateForAsync((await AuthState).User);
+        // Учебные годы не должны пересекаться: каждая дата относится ровно к одному году.
+        var overlapping = await db.AcademicYears
+            .Where(y => y.Id != YearId && y.StartDate <= end && y.EndDate >= start)
+            .Select(y => y.Name)
+            .FirstOrDefaultAsync();
+        if (overlapping is not null)
+        {
+            _error = $"Даты пересекаются с учебным годом {overlapping}.";
+            return;
+        }
+        var name = _name.Trim();
+        if (await db.AcademicYears.AnyAsync(y => y.Name == name && y.Id != YearId))
+        {
+            _error = $"Учебный год «{name}» уже есть.";
+            return;
+        }
+
+        var year = YearId is null ? db.AcademicYears.Add(new AcademicYear()).Entity
+            : await db.AcademicYears.SingleAsync(y => y.Id == YearId);
+        (year.Name, year.StartDate, year.EndDate) = (name, start, end);
+        await db.SaveChangesAsync();
+        Dialog.Close(DialogResult.Ok(true));
+    }
+}
