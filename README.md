@@ -8,12 +8,12 @@
 
 ## Статус
 
-**Этап: согласование требований.** Код ещё не написан.
+**Этап 0: подготовка.** Создан каркас решения, функций пока нет.
 
 | Этап | Состояние |
 |---|---|
 | Требования и план | готово, на согласовании |
-| 0. Подготовка (решение, база, бот) | впереди |
+| 0. Подготовка (решение, база, бот) | в работе: решение и база готовы, бот — впереди |
 | 1–5. Минимальная рабочая версия | впереди, цель — конец января 2027 |
 | 6–9. Уведомления, отчёты, пилот | впереди, цель — конец марта 2027 |
 
@@ -40,15 +40,19 @@
 - MAX — бот и мини-приложение
 - xUnit — тесты
 
-## Структура решения (планируется)
+## Структура решения
 
 ```
-Erudit.sln
-├── Erudit.Domain          — сущности и правила, без зависимостей от базы и UI
-├── Erudit.Infrastructure  — PostgreSQL, MAX API, Hangfire, Excel, внешние данные
-├── Erudit.Web             — Blazor-интерфейс, вход
-└── Erudit.Tests           — автоматические тесты
+Erudit.slnx
+├── src/
+│   ├── Erudit.Domain          — сущности и правила, без зависимостей от базы и UI
+│   ├── Erudit.Infrastructure  — PostgreSQL, MAX API, Hangfire, Excel, внешние данные
+│   └── Erudit.Web             — Blazor-интерфейс, вход (запускаемый проект)
+└── tests/
+    └── Erudit.Tests           — автоматические тесты
 ```
+
+Зависимости: `Web → Infrastructure → Domain`, `Web → Domain`, `Tests → Domain, Infrastructure`. `Domain` не зависит ни от чего.
 
 ## Документы
 
@@ -64,7 +68,21 @@ Erudit.sln
 
 ## Запуск
 
-Появится после этапа 0.
+Нужно: .NET SDK 10 (версия зафиксирована в `global.json`), Visual Studio 2026 или `dotnet` CLI, доступ к PostgreSQL.
+
+1. Строка подключения к базе хранится в **User Secrets** (на компьютере разработчика, не в git):
+   ```
+   dotnet user-secrets set "ConnectionStrings:Erudit" "Host=...;Port=5432;Database=erudit_dev;Username=...;Password=..." --project src/Erudit.Web
+   ```
+2. Запуск сайта: в Visual Studio — открыть `Erudit.slnx` и нажать F5; или из командной строки:
+   ```
+   dotnet run --project src/Erudit.Web
+   ```
+   Сайт откроется на http://localhost:5067 (https://localhost:7284).
+3. Тесты:
+   ```
+   dotnet test
+   ```
 
 ## Лицензия
 

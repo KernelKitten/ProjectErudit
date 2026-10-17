@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Erudit.Domain\Erudit.Domain.csproj" />
+    <ProjectReference Include="..\Erudit.Infrastructure\Erudit.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <UserSecretsId>a3ba5738-ef77-4484-9fd8-ba4a76598d8a</UserSecretsId>
+  </PropertyGroup>
+
+</Project>

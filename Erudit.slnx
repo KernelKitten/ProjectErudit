@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Erudit.Domain/Erudit.Domain.csproj" />
+    <Project Path="src/Erudit.Infrastructure/Erudit.Infrastructure.csproj" />
+    <Project Path="src/Erudit.Web/Erudit.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Erudit.Tests/Erudit.Tests.csproj" />
+  </Folder>
+</Solution>
