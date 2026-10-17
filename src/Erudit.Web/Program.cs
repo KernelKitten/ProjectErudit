@@ -51,11 +51,16 @@ if (app.Environment.IsDevelopment())
         app.Logger.LogInformation("База заполнена тестовыми данными");
     }
 
-    // Номер разработчика из User Secrets получает тестовый администратор — чтобы войти через MAX как он.
-    var myPhone = app.Configuration["Dev:MyPhone"];
-    if (!string.IsNullOrWhiteSpace(myPhone))
+    // Настоящие номера из User Secrets получают тестовые люди — чтобы войти через MAX под ними:
+    //   Dev:MyPhone              → тестовый администратор Зайцев А.П.;
+    //   Dev:Phones:Фамилия Имя   → любой человек из тестовых данных.
+    var phones = app.Configuration.GetSection("Dev:Phones").GetChildren()
+        .Select(s => (Person: s.Key, Phone: s.Value))
+        .Append((Person: DevDataSeeder.DefaultDeveloperPerson, Phone: app.Configuration["Dev:MyPhone"]))
+        .Where(x => !string.IsNullOrWhiteSpace(x.Phone));
+    foreach (var (personName, phone) in phones)
     {
-        var person = await DevDataSeeder.AssignDeveloperPhoneAsync(db, myPhone);
+        var person = await DevDataSeeder.AssignDeveloperPhoneAsync(db, personName, phone!);
         app.Logger.LogInformation("Номер разработчика привязан к {Person}", person);
     }
 }

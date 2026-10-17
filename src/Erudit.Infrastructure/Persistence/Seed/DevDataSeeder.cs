@@ -206,20 +206,34 @@ public static class DevDataSeeder
         return true;
     }
 
+    /// <summary>Тестовый администратор — ему по умолчанию достаётся номер из Dev:MyPhone.</summary>
+    public const string DefaultDeveloperPerson = "Зайцев Андрей";
+
     /// <summary>
-    /// Отдаёт настоящий номер разработчика тестовому администратору (Зайцев А.П.),
-    /// чтобы войти через MAX под ним. Если номер был у кого-то другого — снимает его.
-    /// Возвращает краткое имя человека, получившего номер.
+    /// Отдаёт настоящий номер тестовому человеку «Фамилия Имя», чтобы войти через MAX под ним.
+    /// Если номер был у кого-то другого — снимает его. Возвращает краткое имя человека, получившего номер.
     /// </summary>
-    public static async Task<string> AssignDeveloperPhoneAsync(EruditDbContext db, string phone, CancellationToken ct = default)
+    public static async Task<string> AssignDeveloperPhoneAsync(EruditDbContext db, string lastAndFirstName, string phone,
+        CancellationToken ct = default)
     {
         var normalized = PhoneNumber.Normalize(phone)
-            ?? throw new InvalidOperationException($"Dev:MyPhone: «{phone}» не похож на российский номер.");
+            ?? throw new InvalidOperationException($"Dev: «{phone}» не похож на российский номер.");
 
-        var admin = await db.People.SingleAsync(p => p.LastName == "Зайцев" && p.FirstName == "Андрей", ct);
-        if (admin.Phone == normalized)
+        var parts = lastAndFirstName.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length != 2)
         {
-            return admin.ShortName;
+            throw new InvalidOperationException($"Dev: ожидается «Фамилия Имя», а указано «{lastAndFirstName}».");
+        }
+        var people = await db.People.Where(p => p.LastName == parts[0] && p.FirstName == parts[1]).ToListAsync(ct);
+        if (people.Count != 1)
+        {
+            throw new InvalidOperationException(
+                $"Dev: «{lastAndFirstName}» — найдено {people.Count} человек, нужен ровно один. Уточните по странице /dev/login.");
+        }
+        var person = people[0];
+        if (person.Phone == normalized)
+        {
+            return person.ShortName;
         }
 
         var previousOwner = await db.People.SingleOrDefaultAsync(p => p.Phone == normalized, ct);
@@ -229,9 +243,9 @@ public static class DevDataSeeder
             await db.SaveChangesAsync(ct); // сначала освобождаем номер: он уникальный
         }
 
-        admin.Phone = normalized;
+        person.Phone = normalized;
         await db.SaveChangesAsync(ct);
-        return admin.ShortName;
+        return person.ShortName;
     }
 
     private const int StudentsPerClass = 10;

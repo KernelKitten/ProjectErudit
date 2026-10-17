@@ -94,6 +94,10 @@ Erudit.slnx
    ```
    dotnet user-secrets set "Dev:MyPhone" "+79XXXXXXXXX" --project src/Erudit.Web
    ```
+   Номер можно отдать и любому другому человеку из тестовых данных («Фамилия Имя», как на странице `/dev/login`):
+   ```
+   dotnet user-secrets set "Dev:Phones:Андреев Матвей" "+79XXXXXXXXX" --project src/Erudit.Web
+   ```
 4. Тесты:
    ```
    dotnet test

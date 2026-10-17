@@ -92,7 +92,7 @@
 - **Вход по QR (проверено на живом боте 2026-10-17):** страница `/login` создаёт `LoginRequest` (токен в QR-ссылке `https://max.ru/<бот>?start=login_<токен>`, секрет — только в странице, в БД его SHA-256), опрашивает статус раз в 2 с; бот (`BotUpdateHandler`) регистрирует незнакомого по кнопке `request_contact` и спрашивает «Войти на сайт как …? Устройство: Windows, Chrome» кнопками callback; после «Да» страница уходит на `GET /auth/complete?id=&secret=&persistent=` → cookie. QR живёт 3 мин, после подтверждения — 2 мин на завершение; запрос одноразовый. Запрос создаётся в `OnAfterRenderAsync(firstRender)`, а не в `OnInitializedAsync` (иначе пререндер создаст два запроса).
 - Журнал (`audit_log`): `Person/MaxLinked`, `Person/LoginConfirmed`, `Registration/PhoneNotFound` (номер не найден — для администратора).
 - Вход разработчика `/dev/login` (POST `/auth/dev-login`) — только в Development, на рабочем сервере адреса нет.
-- `Dev:MyPhone` в User Secrets `Erudit.Web` → при старте в Development номер получает тестовый администратор Зайцев А.П. (для проверки входа через MAX).
+- Настоящие номера для проверки входа через MAX (User Secrets `Erudit.Web`, применяются при старте в Development): `Dev:MyPhone` → тестовый администратор Зайцев А.П.; `Dev:Phones:<Фамилия Имя>` → любой человек из тестовых данных (имя должно быть уникальным). Номера — только в секретах, не в git.
 - `PhoneNumber.Normalize` (Domain): любые записи номера → `+7XXXXXXXXXX`.
 - Страницы получают данные через `IDbContextFactory<EruditDbContext>` (контекст на одну операцию: в Blazor Server страница живёт долго).
 - MudBlazor 9: у `MudMenu` своя кнопка в `ActivatorContent` должна сама вызывать `menu.ToggleAsync`.
