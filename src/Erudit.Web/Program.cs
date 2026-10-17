@@ -1,4 +1,6 @@
 using Erudit.Infrastructure;
+using Erudit.Infrastructure.Persistence;
+using Erudit.Infrastructure.Persistence.Seed;
 using Erudit.Web.Components;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,6 +12,17 @@ builder.Services.AddRazorComponents()
 builder.Services.AddInfrastructure(builder.Configuration);
 
 var app = builder.Build();
+
+// В режиме разработки заполняем пустую базу тестовыми данными (если включено в appsettings.Development.json).
+if (app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("SeedDevData"))
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<EruditDbContext>();
+    if (await DevDataSeeder.SeedAsync(db, DateTime.UtcNow))
+    {
+        app.Logger.LogInformation("База заполнена тестовыми данными");
+    }
+}
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
