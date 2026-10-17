@@ -45,15 +45,17 @@ public static class AuthEndpoints
         // Вход из мини-приложения MAX (страница wwwroot/max.html): MAX сам передаёт подписанный initData.
         // Antiforgery здесь не нужен: подделать подписанные MAX данные без токена бота нельзя.
         auth.MapPost("/max-webapp", async (WebAppLogin body, HttpContext http, IOptions<MaxOptions> max,
-            TimeProvider time, PersonRegistration registration, SignInService signIn) =>
+            TimeProvider time, PersonRegistration registration, SignInService signIn, ILogger<WebAppLogin> logger) =>
         {
             var maxUserId = MaxWebApp.ValidateInitData(body.InitData, max.Value.BotToken, time.GetUtcNow().UtcDateTime);
             if (maxUserId is null)
             {
+                logger.LogWarning("Мини-приложение: initData не прошёл проверку (длина {Length})", body.InitData?.Length ?? 0);
                 return Results.Unauthorized();
             }
 
             var person = await registration.FindByMaxIdAsync(maxUserId.Value);
+            logger.LogInformation("Мини-приложение: MAX {MaxUserId} → {Person}", maxUserId, person?.ShortName ?? "не зарегистрирован");
             if (person is null)
             {
                 return Results.Ok(new WebAppLoginResult(null, NeedContact: true)); // незнакомый — попросим номер
@@ -73,7 +75,7 @@ public static class AuthEndpoints
             }
             if (!MaxWebApp.ValidateContact(body.Phone, body.AuthDate, body.Hash, maxUserId.Value, max.Value.BotToken))
             {
-                logger.LogWarning("Номер из мини-приложения не прошёл проверку подписи (MAX {MaxUserId})", maxUserId);
+                logger.LogWarning("Мини-приложение: номер не прошёл проверку подписи (MAX {MaxUserId})", maxUserId);
                 return Results.BadRequest(new { error = "Не удалось проверить номер." });
             }
 

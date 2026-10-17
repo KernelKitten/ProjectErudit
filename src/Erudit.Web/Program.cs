@@ -60,8 +60,8 @@ if (app.Environment.IsDevelopment())
         .Where(x => !string.IsNullOrWhiteSpace(x.Phone));
     foreach (var (personName, phone) in phones)
     {
-        var person = await DevDataSeeder.AssignDeveloperPhoneAsync(db, personName, phone!);
-        app.Logger.LogInformation("Номер разработчика привязан к {Person}", person);
+        var result = await DevDataSeeder.AssignDeveloperPhoneAsync(db, personName, phone!);
+        app.Logger.LogInformation("Номер разработчика: {Result}", result);
     }
 }
 

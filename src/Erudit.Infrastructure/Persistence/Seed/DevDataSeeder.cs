@@ -211,41 +211,35 @@ public static class DevDataSeeder
 
     /// <summary>
     /// Отдаёт настоящий номер тестовому человеку «Фамилия Имя», чтобы войти через MAX под ним.
-    /// Если номер был у кого-то другого — снимает его. Возвращает краткое имя человека, получившего номер.
+    /// Если номер уже есть у кого-то в базе (например, данные поправили вручную) — ничего не меняет.
+    /// Никогда не останавливает запуск: возвращает текст для лога.
     /// </summary>
     public static async Task<string> AssignDeveloperPhoneAsync(EruditDbContext db, string lastAndFirstName, string phone,
         CancellationToken ct = default)
     {
-        var normalized = PhoneNumber.Normalize(phone)
-            ?? throw new InvalidOperationException($"Dev: «{phone}» не похож на российский номер.");
+        var normalized = PhoneNumber.Normalize(phone);
+        if (normalized is null)
+        {
+            return $"номер для «{lastAndFirstName}» не похож на российский — пропущен";
+        }
+
+        var owner = await db.People.SingleOrDefaultAsync(p => p.Phone == normalized, ct);
+        if (owner is not null)
+        {
+            return $"номер уже у {owner.ShortName} — оставлен как есть";
+        }
 
         var parts = lastAndFirstName.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length != 2)
-        {
-            throw new InvalidOperationException($"Dev: ожидается «Фамилия Имя», а указано «{lastAndFirstName}».");
-        }
-        var people = await db.People.Where(p => p.LastName == parts[0] && p.FirstName == parts[1]).ToListAsync(ct);
+        var people = parts.Length != 2 ? []
+            : await db.People.Where(p => p.LastName == parts[0] && p.FirstName == parts[1]).ToListAsync(ct);
         if (people.Count != 1)
         {
-            throw new InvalidOperationException(
-                $"Dev: «{lastAndFirstName}» — найдено {people.Count} человек, нужен ровно один. Уточните по странице /dev/login.");
-        }
-        var person = people[0];
-        if (person.Phone == normalized)
-        {
-            return person.ShortName;
+            return $"«{lastAndFirstName}»: найдено {people.Count} человек, нужен ровно один — номер не привязан";
         }
 
-        var previousOwner = await db.People.SingleOrDefaultAsync(p => p.Phone == normalized, ct);
-        if (previousOwner is not null)
-        {
-            previousOwner.Phone = null;
-            await db.SaveChangesAsync(ct); // сначала освобождаем номер: он уникальный
-        }
-
-        person.Phone = normalized;
+        people[0].Phone = normalized;
         await db.SaveChangesAsync(ct);
-        return person.ShortName;
+        return $"номер привязан к {people[0].ShortName}";
     }
 
     private const int StudentsPerClass = 10;

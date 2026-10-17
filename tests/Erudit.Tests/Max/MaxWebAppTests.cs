@@ -72,5 +72,6 @@ public class MaxWebAppTests
         Assert.True(MaxWebApp.ValidateContact("+79991234567", "1792263798", hash, userId, BotToken));
         Assert.False(MaxWebApp.ValidateContact("+79990000000", "1792263798", hash, userId, BotToken)); // чужой номер
         Assert.False(MaxWebApp.ValidateContact("+79991234567", "1792263798", hash, userId + 1, BotToken)); // чужой аккаунт
+        Assert.False(MaxWebApp.ValidateContact("+79991234567", "1792263798", hash, userId, "другой-бот")); // чужой бот
     }
 }

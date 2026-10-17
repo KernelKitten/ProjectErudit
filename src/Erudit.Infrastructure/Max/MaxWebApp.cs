@@ -68,17 +68,13 @@ public static class MaxWebApp
     }
 
     /// <summary>
-    /// Проверка номера из WebApp.requestContact(): hash = HMAC-SHA256 от строки
-    /// «authDate=...\nphone=...\nuserId=...» (номер без «+»). Документация говорит «ключ — токен бота»,
-    /// но для initData ключ выводится через "WebAppData", поэтому принимаем оба варианта: оба требуют токен.
+    /// Проверка номера из WebApp.requestContact(): hash = hex(HMAC-SHA256(ключ: токен бота,
+    /// сообщение: «authDate=...\nphone=...\nuserId=...»)), номер без «+». Проверено на живом боте 2026-10-17.
     /// </summary>
     public static bool ValidateContact(string phone, string authDate, string hash, long userId, string botToken)
     {
         var data = Encoding.UTF8.GetBytes($"authDate={authDate}\nphone={phone.TrimStart('+')}\nuserId={userId}");
-        var byToken = HMACSHA256.HashData(Encoding.UTF8.GetBytes(botToken), data);
-        var secret = HMACSHA256.HashData(Encoding.UTF8.GetBytes("WebAppData"), Encoding.UTF8.GetBytes(botToken));
-        var bySecret = HMACSHA256.HashData(secret, data);
-        return HexEquals(byToken, hash) || HexEquals(bySecret, hash);
+        return HexEquals(HMACSHA256.HashData(Encoding.UTF8.GetBytes(botToken), data), hash);
     }
 
     private static bool HexEquals(byte[] expected, string hex) =>
