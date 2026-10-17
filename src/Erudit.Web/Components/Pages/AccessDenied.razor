@@ -1,0 +1,9 @@
+@page "/access-denied"
+@attribute [AllowAnonymous]
+
+<PageTitle>Нет доступа</PageTitle>
+
+<MudAlert Severity="Severity.Warning" Class="mt-4">
+    Эта страница недоступна в текущей роли. Переключите роль в правом верхнем углу
+    или <MudLink Href="/">вернитесь к своим страницам</MudLink>.
+</MudAlert>

@@ -1,7 +1,15 @@
 ﻿@page "/"
+@attribute [Authorize]
+@inject NavigationManager Navigation
 
-<PageTitle>Home</PageTitle>
+@* Главная просто ведёт на стартовую страницу активной роли. *@
 
-<h1>Hello, world!</h1>
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
 
-Welcome to your new app.
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthState).User;
+        Navigation.NavigateTo(AppRoles.HomePage(user.GetActiveRole() ?? ""), replace: true);
+    }
+}

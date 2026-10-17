@@ -1,0 +1,62 @@
+@page "/class-teacher"
+@attribute [Authorize(Roles = AppRoles.ClassTeacher)]
+@using Erudit.Domain.School
+@inject IDbContextFactory<EruditDbContext> DbFactory
+
+<PageTitle>Мои классы</PageTitle>
+
+<MudText Typo="Typo.h5" GutterBottom>Мои классы</MudText>
+
+@if (_classes is null)
+{
+    <MudProgressLinear Indeterminate />
+}
+else
+{
+    <MudExpansionPanels MultiExpansion>
+        @foreach (var c in _classes)
+        {
+            <MudExpansionPanel Text="@($"{c.Class.Name} — {c.Students.Count} учеников")" Expanded="_classes.Count == 1">
+                <MudSimpleTable Dense>
+                    <tbody>
+                        @foreach (var s in c.Students)
+                        {
+                            <tr>
+                                <td>@s.FullName</td>
+                                <td>@(s.Phone ?? "нет телефона")</td>
+                                <td>@(s.MaxUserId is null ? "не зарегистрирован в MAX" : "MAX ✓")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </MudExpansionPanel>
+        }
+    </MudExpansionPanels>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+    private List<(SchoolClass Class, List<Erudit.Domain.People.Person> Students)>? _classes;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var personId = (await AuthState).User.GetPersonId();
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var classes = await db.SchoolClasses
+            .Where(c => c.ClassTeacherId == personId)
+            .OrderBy(c => c.Grade).ThenBy(c => c.Letter)
+            .ToListAsync();
+
+        _classes = [];
+        foreach (var c in classes)
+        {
+            var students = await db.ClassMemberships
+                .Where(m => m.SchoolClassId == c.Id && m.ToDate == null)
+                .Select(m => m.Student)
+                .OrderBy(s => s.LastName).ThenBy(s => s.FirstName)
+                .ToListAsync();
+            _classes.Add((c, students));
+        }
+    }
+}

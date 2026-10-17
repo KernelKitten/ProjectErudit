@@ -1,0 +1,28 @@
+@* Меню показывает разделы только активной роли — чтобы не путаться. *@
+<AuthorizeView>
+    @{ var role = context.User.GetActiveRole(); }
+    <MudNavMenu Class="pt-2">
+        <MudText Typo="Typo.overline" Class="px-4">@AppRoles.DisplayName(role ?? "")</MudText>
+        @switch (role)
+        {
+            case AppRoles.Teacher:
+                <MudNavLink Href="teacher" Icon="@Icons.Material.Outlined.EventNote">Мои занятия</MudNavLink>
+                break;
+            case AppRoles.ClassTeacher:
+                <MudNavLink Href="class-teacher" Icon="@Icons.Material.Outlined.Groups">Мои классы</MudNavLink>
+                break;
+            case AppRoles.HeadTeacher:
+                <MudNavLink Href="head-teacher" Icon="@Icons.Material.Outlined.Assessment">Сводка</MudNavLink>
+                break;
+            case AppRoles.Admin:
+                <MudNavLink Href="admin" Icon="@Icons.Material.Outlined.AdminPanelSettings">Администрирование</MudNavLink>
+                break;
+            case AppRoles.Parent:
+                <MudNavLink Href="parent" Icon="@Icons.Material.Outlined.FamilyRestroom">Мои дети</MudNavLink>
+                break;
+            case AppRoles.Student:
+                <MudNavLink Href="student" Icon="@Icons.Material.Outlined.EventNote">Мои занятия</MudNavLink>
+                break;
+        }
+    </MudNavMenu>
+</AuthorizeView>

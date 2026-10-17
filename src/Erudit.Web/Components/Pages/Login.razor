@@ -1,0 +1,35 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@inject IWebHostEnvironment Environment
+
+<PageTitle>Вход</PageTitle>
+
+<MudPaper Class="pa-6 mx-auto mt-8" MaxWidth="480px" Elevation="2">
+    <MudText Typo="Typo.h5" GutterBottom>Вход</MudText>
+
+    <AuthorizeView>
+        <Authorized>
+            <MudAlert Severity="Severity.Info">
+                Вы уже вошли как @context.User.Identity?.Name.
+                <MudLink Href="/">Перейти к своим страницам</MudLink>
+            </MudAlert>
+        </Authorized>
+        <NotAuthorized>
+            <MudText Class="mb-4">
+                Вход выполняется через мессенджер MAX: отсканируйте QR-код телефоном и подтвердите вход в боте.
+            </MudText>
+            <MudAlert Severity="Severity.Normal" Variant="Variant.Outlined">
+                Вход по QR-коду появится на следующем шаге этапа 2.
+            </MudAlert>
+
+            @if (Environment.IsDevelopment())
+            {
+                <MudDivider Class="my-4" />
+                <MudButton Href="dev/login" Variant="Variant.Outlined" Color="Color.Secondary"
+                           StartIcon="@Icons.Material.Outlined.Build" FullWidth>
+                    Вход разработчика (только в режиме разработки)
+                </MudButton>
+            }
+        </NotAuthorized>
+    </AuthorizeView>
+</MudPaper>

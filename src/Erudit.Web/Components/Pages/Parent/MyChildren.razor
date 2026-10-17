@@ -1,0 +1,46 @@
+@page "/parent"
+@attribute [Authorize(Roles = AppRoles.Parent)]
+@inject IDbContextFactory<EruditDbContext> DbFactory
+
+<PageTitle>Мои дети</PageTitle>
+
+<MudText Typo="Typo.h5" GutterBottom>Мои дети</MudText>
+
+@if (_children is null)
+{
+    <MudProgressLinear Indeterminate />
+}
+else
+{
+    @foreach (var child in _children)
+    {
+        <MudPaper Class="pa-3 mb-2" Outlined>
+            <MudText Typo="Typo.subtitle1"><b>@child.Name</b>, @child.ClassName</MudText>
+            <MudText Typo="Typo.body2">
+                Уведомления: @(child.NotifyAll ? "все уведомления о занятиях" : "еженедельная сводка")
+            </MudText>
+        </MudPaper>
+    }
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+    private List<ChildRow>? _children;
+
+    private sealed record ChildRow(string Name, string ClassName, bool NotifyAll);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var personId = (await AuthState).User.GetPersonId();
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _children = await db.ParentLinks
+            .Where(l => l.ParentId == personId)
+            .Select(l => new ChildRow(
+                l.Student.LastName + " " + l.Student.FirstName,
+                db.ClassMemberships.Where(m => m.StudentId == l.StudentId && m.ToDate == null)
+                    .Select(m => m.SchoolClass.Grade + m.SchoolClass.Letter).FirstOrDefault() ?? "",
+                l.NotifyAll))
+            .ToListAsync();
+    }
+}

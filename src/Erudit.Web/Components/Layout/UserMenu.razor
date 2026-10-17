@@ -1,0 +1,49 @@
+@* Правый угол шапки: кто вошёл, переключение роли, выход.
+   Переключение и выход — обычные HTML-формы (POST на /auth/...): cookie меняется только в HTTP-ответе. *@
+<AuthorizeView Context="auth">
+    <Authorized>
+        <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Dense>
+            <ActivatorContent Context="menu">
+                @* В MudBlazor 9 своя кнопка-активатор открывает меню сама: menu.ToggleAsync *@
+                <MudButton Color="Color.Inherit" EndIcon="@Icons.Material.Filled.ArrowDropDown" Style="text-transform: none"
+                           OnClick="menu.ToggleAsync">
+                    <div style="text-align: right; line-height: 1.2">
+                        <div>@auth.User.Identity?.Name</div>
+                        <MudText Typo="Typo.caption" Style="opacity: .8">
+                            @AppRoles.DisplayName(auth.User.GetActiveRole() ?? "")
+                        </MudText>
+                    </div>
+                </MudButton>
+            </ActivatorContent>
+            <ChildContent>
+                @{ var others = auth.User.GetAvailableRoles().Where(r => r != auth.User.GetActiveRole()).ToList(); }
+                @if (others.Count > 0)
+                {
+                    <MudText Typo="Typo.caption" Class="px-4 pt-2 d-block">Перейти в роль</MudText>
+                    @foreach (var role in others)
+                    {
+                        <form method="post" action="auth/switch-role">
+                            <AntiforgeryToken />
+                            <input type="hidden" name="role" value="@role" />
+                            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Text" FullWidth
+                                       StartIcon="@Icons.Material.Outlined.SwapHoriz" Class="justify-start px-4">
+                                @AppRoles.DisplayName(role)
+                            </MudButton>
+                        </form>
+                    }
+                    <MudDivider Class="my-1" />
+                }
+                <form method="post" action="auth/logout">
+                    <AntiforgeryToken />
+                    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Text" FullWidth
+                               StartIcon="@Icons.Material.Outlined.Logout" Class="justify-start px-4">
+                        Выйти
+                    </MudButton>
+                </form>
+            </ChildContent>
+        </MudMenu>
+    </Authorized>
+    <NotAuthorized>
+        <MudButton Href="login" Color="Color.Inherit" StartIcon="@Icons.Material.Outlined.Login">Войти</MudButton>
+    </NotAuthorized>
+</AuthorizeView>

@@ -206,6 +206,34 @@ public static class DevDataSeeder
         return true;
     }
 
+    /// <summary>
+    /// Отдаёт настоящий номер разработчика тестовому администратору (Зайцев А.П.),
+    /// чтобы войти через MAX под ним. Если номер был у кого-то другого — снимает его.
+    /// Возвращает краткое имя человека, получившего номер.
+    /// </summary>
+    public static async Task<string> AssignDeveloperPhoneAsync(EruditDbContext db, string phone, CancellationToken ct = default)
+    {
+        var normalized = PhoneNumber.Normalize(phone)
+            ?? throw new InvalidOperationException($"Dev:MyPhone: «{phone}» не похож на российский номер.");
+
+        var admin = await db.People.SingleAsync(p => p.LastName == "Зайцев" && p.FirstName == "Андрей", ct);
+        if (admin.Phone == normalized)
+        {
+            return admin.ShortName;
+        }
+
+        var previousOwner = await db.People.SingleOrDefaultAsync(p => p.Phone == normalized, ct);
+        if (previousOwner is not null)
+        {
+            previousOwner.Phone = null;
+            await db.SaveChangesAsync(ct); // сначала освобождаем номер: он уникальный
+        }
+
+        admin.Phone = normalized;
+        await db.SaveChangesAsync(ct);
+        return admin.ShortName;
+    }
+
     private const int StudentsPerClass = 10;
 
     private static readonly (int Grade, string Letter)[] ClassNames =

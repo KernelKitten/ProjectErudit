@@ -19,10 +19,15 @@ public static class DependencyInjection
             ?? throw new InvalidOperationException(
                 "Не задана строка подключения ConnectionStrings:Erudit. Добавьте её в User Secrets.");
 
-        services.AddDbContext<EruditDbContext>(options => options
+        // Фабрика контекстов: в Blazor Server страница живёт долго (пока открыта вкладка),
+        // а DbContext рассчитан на короткую работу. Поэтому страницы берут свежий контекст
+        // из фабрики на каждую операцию: await using var db = await dbFactory.CreateDbContextAsync();
+        services.AddDbContextFactory<EruditDbContext>(options => options
             .UseNpgsql(connectionString)
             // Имена таблиц и колонок в стиле PostgreSQL: lesson_periods, starts_at.
             .UseSnakeCaseNamingConvention());
+        // Для кода вне страниц (фоновые задачи, старт приложения) — обычный контекст на время запроса/области.
+        services.AddScoped(sp => sp.GetRequiredService<IDbContextFactory<EruditDbContext>>().CreateDbContext());
 
         services.AddOptions<MaxOptions>()
             .Bind(configuration.GetSection(MaxOptions.SectionName))

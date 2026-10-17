@@ -1,9 +1,50 @@
 ﻿@inherits LayoutComponentBase
 
-@Body
+@* Провайдеры MudBlazor: тема, всплывающие меню, диалоги, уведомления-«тосты». *@
+<MudThemeProvider Theme="_theme" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1">
+        <AuthorizeView>
+            <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
+                           OnClick="() => _drawerOpen = !_drawerOpen" aria-label="Меню" />
+        </AuthorizeView>
+        <MudText Typo="Typo.h6" Class="ml-2">Эрудит · доп. занятия</MudText>
+        <MudSpacer />
+        <UserMenu />
+    </MudAppBar>
+
+    <AuthorizeView>
+        <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="1">
+            <NavMenu />
+        </MudDrawer>
+    </AuthorizeView>
+
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
 
 <div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
+    Произошла ошибка.
+    <a href="." class="reload">Перезагрузить</a>
     <span class="dismiss">🗙</span>
 </div>
+
+@code {
+    private bool _drawerOpen = true;
+
+    private readonly MudTheme _theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#1F3864",
+            AppbarBackground = "#1F3864",
+        },
+    };
+}

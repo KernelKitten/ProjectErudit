@@ -1,0 +1,111 @@
+@page "/dev/login"
+@attribute [AllowAnonymous]
+@using Erudit.Domain.People
+@inject IWebHostEnvironment Environment
+@inject IDbContextFactory<EruditDbContext> DbFactory
+
+<PageTitle>Вход разработчика</PageTitle>
+
+@if (!Environment.IsDevelopment())
+{
+    <MudAlert Severity="Severity.Error">Страница доступна только в режиме разработки.</MudAlert>
+    return;
+}
+
+<MudText Typo="Typo.h5" GutterBottom>Вход разработчика</MudText>
+<MudText Class="mb-4">
+    Войти под любым человеком из тестовых данных, без MAX. На рабочем сервере этой возможности нет.
+</MudText>
+
+@if (Error)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">Не удалось войти: человек выключен или у него нет ролей.</MudAlert>
+}
+
+<MudStack Row Class="mb-4" AlignItems="AlignItems.Center">
+    <MudTextField @bind-Value="_search" Immediate Placeholder="Фамилия" Adornment="Adornment.Start"
+                  AdornmentIcon="@Icons.Material.Outlined.Search" Style="max-width: 300px" />
+    <MudSelect T="Role?" @bind-Value="_role" Label="Роль" Clearable Style="max-width: 220px">
+        @foreach (var role in Enum.GetValues<Role>())
+        {
+            <MudSelectItem T="Role?" Value="role">@AppRoles.DisplayName(AppRoles.FromDomain(role))</MudSelectItem>
+        }
+    </MudSelect>
+</MudStack>
+
+@if (_people is null)
+{
+    <MudProgressLinear Indeterminate />
+}
+else
+{
+    <MudSimpleTable Dense Hover Striped>
+        <thead>
+            <tr><th>Человек</th><th>Роли</th><th>Класс</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var p in Filtered.Take(50))
+            {
+                <tr>
+                    <td>@p.FullName</td>
+                    <td>
+                        @foreach (var r in p.Roles)
+                        {
+                            <MudChip T="string" Size="Size.Small">@AppRoles.DisplayName(AppRoles.FromDomain(r))</MudChip>
+                        }
+                        @if (p.LeadsClass)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info">Кл. руководитель</MudChip>
+                        }
+                    </td>
+                    <td>@p.ClassName</td>
+                    <td>
+                        <form method="post" action="auth/dev-login">
+                            <AntiforgeryToken />
+                            <input type="hidden" name="personId" value="@p.Id" />
+                            <MudButton ButtonType="ButtonType.Submit" Size="Size.Small" Variant="Variant.Filled"
+                                       Color="Color.Primary">Войти</MudButton>
+                        </form>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+    <MudText Typo="Typo.caption">Показано не больше 50 человек — уточните поиск.</MudText>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "error")] private int? ErrorFlag { get; set; }
+    private bool Error => ErrorFlag == 1;
+
+    private string _search = "";
+    private Role? _role;
+    private List<PersonRow>? _people;
+
+    private sealed record PersonRow(int Id, string FullName, List<Role> Roles, bool LeadsClass, string? ClassName);
+
+    private IEnumerable<PersonRow> Filtered => _people!
+        .Where(p => _search.Length == 0 || p.FullName.Contains(_search, StringComparison.CurrentCultureIgnoreCase))
+        .Where(p => _role is null || p.Roles.Contains(_role.Value));
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Environment.IsDevelopment())
+        {
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var people = await db.People.Include(p => p.Roles).Where(p => p.IsActive)
+            .OrderBy(p => p.LastName).ThenBy(p => p.FirstName).ToListAsync();
+        var classTeachers = await db.SchoolClasses.Where(c => c.ClassTeacherId != null)
+            .Select(c => c.ClassTeacherId!.Value).ToListAsync();
+        var classes = await db.ClassMemberships.Where(m => m.ToDate == null)
+            .Select(m => new { m.StudentId, m.SchoolClass.Grade, m.SchoolClass.Letter }).ToListAsync();
+        var classByStudent = classes.ToDictionary(c => c.StudentId, c => $"{c.Grade}{c.Letter}");
+
+        _people = people.Select(p => new PersonRow(p.Id, p.FullName, p.Roles.Select(r => r.Role).Order().ToList(),
+                classTeachers.Contains(p.Id), classByStudent.GetValueOrDefault(p.Id)))
+            .ToList();
+    }
+}

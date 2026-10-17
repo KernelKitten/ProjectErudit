@@ -1,0 +1,48 @@
+@page "/head-teacher"
+@attribute [Authorize(Roles = AppRoles.HeadTeacher)]
+@using Erudit.Domain.Lessons
+@inject IDbContextFactory<EruditDbContext> DbFactory
+
+<PageTitle>Сводка</PageTitle>
+
+<MudText Typo="Typo.h5" GutterBottom>Сводка по учителям</MudText>
+<MudText Typo="Typo.body2" Class="mb-4">Полноценные отчёты с фильтрами и выгрузкой в Excel — этап 7.</MudText>
+
+@if (_rows is null)
+{
+    <MudProgressLinear Indeterminate />
+}
+else
+{
+    <MudSimpleTable Dense Hover>
+        <thead><tr><th>Учитель</th><th>Проведено занятий</th><th>Ак. часов</th></tr></thead>
+        <tbody>
+            @foreach (var r in _rows)
+            {
+                <tr><td>@r.Teacher</td><td>@r.Lessons</td><td>@((r.Minutes / 40.0).ToString("0.##"))</td></tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+}
+
+@code {
+    private List<Row>? _rows;
+
+    private sealed record Row(string Teacher, int Lessons, int Minutes);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var held = await db.Lessons
+            .Where(l => l.Status == LessonStatus.Held)
+            .Select(l => new { l.Teacher.LastName, l.Teacher.FirstName, l.Teacher.MiddleName,
+                Minutes = l.ActualDurationMinutes ?? l.DurationMinutes })
+            .ToListAsync();
+
+        _rows = held
+            .GroupBy(l => $"{l.LastName} {l.FirstName[0]}.{(l.MiddleName is null ? "" : l.MiddleName[0] + ".")}")
+            .Select(g => new Row(g.Key, g.Count(), g.Sum(x => x.Minutes)))
+            .OrderBy(r => r.Teacher)
+            .ToList();
+    }
+}

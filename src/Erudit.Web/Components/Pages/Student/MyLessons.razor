@@ -1,0 +1,58 @@
+@page "/student"
+@attribute [Authorize(Roles = AppRoles.Student)]
+@using Erudit.Domain.Lessons
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject TimeProvider Time
+
+<PageTitle>Мои занятия</PageTitle>
+
+<MudText Typo="Typo.h5" GutterBottom>Мои занятия: эта и следующая неделя</MudText>
+<MudText Typo="Typo.body2" Class="mb-4">Пока только просмотр. Запись на занятия — этап 5.</MudText>
+
+@if (_enrollments is null)
+{
+    <MudProgressLinear Indeterminate />
+}
+else if (_enrollments.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">На ближайшие две недели вы ни на что не записаны.</MudAlert>
+}
+else
+{
+    <MudStack Spacing="2">
+        @foreach (var e in _enrollments)
+        {
+            var l = e.Lesson;
+            <MudPaper Class="pa-3" Outlined>
+                <MudText Typo="Typo.subtitle1"><b>@LessonFormat.Date(l.StartsAt)</b>, @LessonFormat.Time(l)</MudText>
+                <MudText>@l.Subject.Name · @l.Teacher.ShortName · @l.Room.Name</MudText>
+                @if (l.Status != LessonStatus.Planned)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="LessonFormat.StatusColor(l.Status)">@LessonFormat.Status(l.Status)</MudChip>
+                }
+            </MudPaper>
+        }
+    </MudStack>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+    private List<Enrollment>? _enrollments;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var personId = (await AuthState).User.GetPersonId();
+        var from = LessonFormat.WeekStartUtc(Time.GetUtcNow().UtcDateTime);
+        var to = from.AddDays(14);
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _enrollments = await db.Enrollments
+            .Include(e => e.Lesson).ThenInclude(l => l.Subject)
+            .Include(e => e.Lesson).ThenInclude(l => l.Room)
+            .Include(e => e.Lesson).ThenInclude(l => l.Teacher)
+            .Where(e => e.StudentId == personId && e.Status == EnrollmentStatus.Active
+                && e.Lesson.StartsAt >= from && e.Lesson.StartsAt < to)
+            .OrderBy(e => e.Lesson.StartsAt)
+            .ToListAsync();
+    }
+}

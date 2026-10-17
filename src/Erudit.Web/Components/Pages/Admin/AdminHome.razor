@@ -1,0 +1,39 @@
+@page "/admin"
+@attribute [Authorize(Roles = AppRoles.Admin)]
+@using Erudit.Domain.People
+@inject IDbContextFactory<EruditDbContext> DbFactory
+
+<PageTitle>Администрирование</PageTitle>
+
+<MudText Typo="Typo.h5" GutterBottom>Администрирование</MudText>
+<MudText Typo="Typo.body2" Class="mb-4">Загрузка списков, звонки и каникулы — этап 3. Пока только счётчики.</MudText>
+
+<MudGrid>
+    @foreach (var (title, value) in _stats)
+    {
+        <MudItem xs="6" sm="4" md="3">
+            <MudPaper Class="pa-4" Outlined>
+                <MudText Typo="Typo.caption">@title</MudText>
+                <MudText Typo="Typo.h5">@value</MudText>
+            </MudPaper>
+        </MudItem>
+    }
+</MudGrid>
+
+@code {
+    private List<(string Title, int Value)> _stats = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _stats =
+        [
+            ("Учителей", await db.People.CountAsync(p => p.Roles.Any(r => r.Role == Role.Teacher))),
+            ("Учеников", await db.People.CountAsync(p => p.Roles.Any(r => r.Role == Role.Student))),
+            ("Родителей", await db.People.CountAsync(p => p.Roles.Any(r => r.Role == Role.Parent))),
+            ("Зарегистрированы в MAX", await db.People.CountAsync(p => p.MaxUserId != null)),
+            ("Классов", await db.SchoolClasses.CountAsync()),
+            ("Занятий", await db.Lessons.CountAsync()),
+        ];
+    }
+}
