@@ -85,7 +85,8 @@ public class BotLoginTests(TestDatabase database)
     private async Task HandleAsync(JsonObject update)
     {
         await using var db = database.CreateContext();
-        var handler = new BotUpdateHandler(db, _bot, Options.Create(new MaxOptions { BotToken = BotToken }),
+        var handler = new BotUpdateHandler(db, new PersonRegistration(db, TimeProvider.System), _bot,
+            Options.Create(new MaxOptions { BotToken = BotToken }),
             TimeProvider.System, NullLogger<BotUpdateHandler>.Instance);
         await handler.HandleAsync(update);
     }

@@ -16,6 +16,7 @@ namespace Erudit.Infrastructure.Max;
 /// </summary>
 public sealed class BotUpdateHandler(
     EruditDbContext db,
+    PersonRegistration registration,
     IMaxBotClient bot,
     IOptions<MaxOptions> options,
     TimeProvider time,
@@ -124,24 +125,13 @@ public sealed class BotUpdateHandler(
             return;
         }
 
-        var person = await db.People.Include(p => p.Roles).SingleOrDefaultAsync(p => p.Phone == phone && p.IsActive, ct);
+        var person = await registration.LinkMaxAccountAsync(phone, maxUserId, ct);
         if (person is null)
         {
-            // Администратор увидит такие попытки в журнале.
-            Audit("Registration", maxUserId.ToString(), "PhoneNotFound", new { phone });
-            await db.SaveChangesAsync(ct);
             await SendAsync(maxUserId, "Ваш номер не найден в списках школы. Обратитесь к классному руководителю.", ct);
             return;
         }
 
-        // Один аккаунт MAX — один человек: если этот аккаунт был у кого-то другого, отвязываем.
-        var previous = await db.People.Where(p => p.MaxUserId == maxUserId && p.Id != person.Id).ToListAsync(ct);
-        previous.ForEach(p => p.MaxUserId = null);
-        await db.SaveChangesAsync(ct);
-
-        person.MaxUserId = maxUserId;
-        Audit("Person", person.Id.ToString(), "MaxLinked", new { maxUserId });
-        await db.SaveChangesAsync(ct);
         await SendAsync(maxUserId, $"Готово, {person.ShortName}! Номер подтверждён, теперь бот вас знает.", ct);
 
         // Если человек пришёл по QR-коду — продолжаем вход.
@@ -206,7 +196,7 @@ public sealed class BotUpdateHandler(
         bot.SendMessageAsync(maxUserId, new MaxMessage(text), ct);
 
     private Task<Person?> FindByMaxIdAsync(long maxUserId, CancellationToken ct) =>
-        db.People.Include(p => p.Roles).SingleOrDefaultAsync(p => p.MaxUserId == maxUserId && p.IsActive, ct);
+        registration.FindByMaxIdAsync(maxUserId, ct);
 
     private void Audit(string entityType, string entityId, string action, object changes) =>
         db.AuditEntries.Add(new AuditEntry

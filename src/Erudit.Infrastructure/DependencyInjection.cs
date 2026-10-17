@@ -50,6 +50,7 @@ public static class DependencyInjection
 
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<BotUpdateHandler>();
+        services.AddScoped<PersonRegistration>();
         services.AddSingleton<LoginRequestService>();
 
         var useLongPolling = configuration.GetValue<bool>($"{MaxOptions.SectionName}:{nameof(MaxOptions.UseLongPolling)}");

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<!--
+    Точка входа мини-приложения MAX (адрес https://<сайт>/max.html указывается в настройках бота).
+    Обычная HTML-страница, не Blazor: ей нужно только войти и перейти на сайт.
+    1. Библиотека MAX Bridge даёт window.WebApp.initData — подписанные MAX данные пользователя.
+    2. Отправляем их на /auth/max-webapp, сервер проверяет подпись и выдаёт cookie.
+    3. Человек незнаком — просим номер (WebApp.requestContact) и отправляем на /auth/max-webapp/contact.
+-->
+<html lang="ru">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Эрудит · доп. занятия</title>
+    <script src="https://st.max.ru/js/max-web-app.js"></script>
+    <style>
+        body { font-family: Roboto, Arial, sans-serif; margin: 0; background: #f5f5f5; color: #222; }
+        header { background: #1F3864; color: #fff; padding: 14px 16px; font-size: 18px; }
+        main { padding: 24px 16px; max-width: 480px; margin: 0 auto; }
+        .card { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+        button { width: 100%; padding: 12px; font-size: 16px; border: 0; border-radius: 6px;
+                 background: #1F3864; color: #fff; margin-top: 16px; }
+        .error { color: #b00020; }
+        [hidden] { display: none; }
+    </style>
+</head>
+<body>
+    <header>Эрудит · доп. занятия</header>
+    <main>
+        <div class="card">
+            <p id="status">Входим...</p>
+            <button id="share" hidden>📱 Поделиться номером</button>
+        </div>
+    </main>
+
+    <script>
+        const status = document.getElementById("status");
+        const share = document.getElementById("share");
+        const webApp = window.WebApp;
+
+        function show(text, isError) {
+            status.textContent = text;
+            status.className = isError ? "error" : "";
+        }
+
+        async function post(url, body) {
+            const response = await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+            });
+            const data = await response.json().catch(() => ({}));
+            return { ok: response.ok, status: response.status, data };
+        }
+
+        async function login() {
+            if (!webApp || !webApp.initData) {
+                show("Откройте эту страницу из бота в MAX.", true);
+                return;
+            }
+            const result = await post("auth/max-webapp", { initData: webApp.initData });
+            if (!result.ok) {
+                show("Не удалось войти. Закройте и снова откройте приложение.", true);
+            } else if (result.data.needContact) {
+                show("Чтобы войти, подтвердите номер телефона — по нему мы найдём вас в списках школы.");
+                share.hidden = false;
+            } else {
+                location.replace(result.data.redirect || "/");
+            }
+        }
+
+        share.addEventListener("click", async () => {
+            try {
+                const contact = await webApp.requestContact();
+                const result = await post("auth/max-webapp/contact", {
+                    initData: webApp.initData,
+                    phone: contact.phone,
+                    authDate: String(contact.authDate),
+                    hash: contact.hash,
+                });
+                if (result.ok) {
+                    location.replace(result.data.redirect || "/");
+                } else {
+                    show(result.data.error || "Не удалось войти.", true);
+                }
+            } catch {
+                show("Номер не получен. Нажмите кнопку ещё раз и разрешите доступ к номеру.", true);
+            }
+        });
+
+        login();
+    </script>
+</body>
+</html>
