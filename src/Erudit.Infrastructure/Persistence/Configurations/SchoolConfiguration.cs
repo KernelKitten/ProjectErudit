@@ -21,7 +21,7 @@ public class SchoolClassConfiguration : IEntityTypeConfiguration<SchoolClass>
         b.HasIndex(c => new { c.AcademicYearId, c.Grade, c.Letter }).IsUnique();
         b.HasOne(c => c.ClassTeacher).WithMany().HasForeignKey(c => c.ClassTeacherId);
         b.Ignore(c => c.Name);
-        b.ToTable(t => t.HasCheckConstraint("ck_school_classes_grade", "grade BETWEEN 1 AND 11"));
+        b.ToTable(t => t.HasCheckConstraint("ck_school_classes_grade", "grade BETWEEN 0 AND 11"));
     }
 }
 

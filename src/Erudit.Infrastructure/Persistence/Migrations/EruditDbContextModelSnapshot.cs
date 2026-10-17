@@ -704,7 +704,7 @@ namespace Erudit.Infrastructure.Persistence.Migrations
 
                     b.ToTable("school_classes", null, t =>
                         {
-                            t.HasCheckConstraint("ck_school_classes_grade", "grade BETWEEN 1 AND 11");
+                            t.HasCheckConstraint("ck_school_classes_grade", "grade BETWEEN 0 AND 11");
                         });
                 });
 

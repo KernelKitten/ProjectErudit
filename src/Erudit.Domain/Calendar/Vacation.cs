@@ -11,7 +11,7 @@ public class Vacation
     public DateOnly StartDate { get; set; }
     public DateOnly EndDate { get; set; }
 
-    /// <summary>С какой параллели действуют (пусто — с 1-й).</summary>
+    /// <summary>С какой параллели действуют (пусто — с самой младшей, включая подготовительную 0).</summary>
     public int? GradeFrom { get; set; }
 
     /// <summary>По какую параллель действуют (пусто — по 11-ю).</summary>
@@ -19,6 +19,6 @@ public class Vacation
 
     public bool AppliesTo(DateOnly date, int grade) =>
         date >= StartDate && date <= EndDate
-        && grade >= (GradeFrom ?? 1)
+        && grade >= (GradeFrom ?? 0)
         && grade <= (GradeTo ?? 11);
 }

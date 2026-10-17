@@ -13,7 +13,7 @@ public class SchoolClass
     public int AcademicYearId { get; set; }
     public AcademicYear AcademicYear { get; set; } = null!;
 
-    /// <summary>Параллель: 1–11.</summary>
+    /// <summary>Параллель: 1–11; 0 — подготовительная группа перед первым классом.</summary>
     public int Grade { get; set; }
 
     /// <summary>Буква: «а», «б»... Для 10 и 11 классов в гимназии может быть пустой.</summary>

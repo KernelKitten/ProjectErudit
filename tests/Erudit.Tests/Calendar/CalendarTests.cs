@@ -61,6 +61,7 @@ public class VacationTests
     {
         var autumn = new Vacation { StartDate = new DateOnly(2026, 10, 26), EndDate = new DateOnly(2026, 11, 3) };
 
+        Assert.True(autumn.AppliesTo(new DateOnly(2026, 10, 30), 0)); // подготовительная группа
         Assert.True(autumn.AppliesTo(new DateOnly(2026, 10, 30), 1));
         Assert.True(autumn.AppliesTo(new DateOnly(2026, 10, 30), 11));
     }
