@@ -7,7 +7,7 @@
 - **README.md поддерживать в актуальном состоянии**: при каждом заметном изменении (новый этап, новый проект в решении, изменился способ запуска) обновлять его в том же коммите.
 
 - Автор — школьник (знает C++, немного C#, SQL, Node.js), помогает папа. Цель — не только сделать, но и **понять**: объяснять решения, термины C#/.NET, предлагать варианты с аргументами, спрашивать перед каждым этапом.
-- Требования собраны (см. ниже и `docs/`). Работаем по этапам из `PLAN.md`; перед каждым этапом обсуждаем, что и как делаем. Сейчас — этап 0 (каркас решения готов, впереди бот MAX и Dev Tunnel).
+- Требования собраны (см. ниже и `docs/`). Работаем по этапам из `PLAN.md`; перед каждым этапом обсуждаем, что и как делаем. Этап 0 закрыт (Dev Tunnel отложен до этапа 2). Сейчас — этап 1: модель данных и первая миграция готовы, впереди тестовые данные (seed).
 - Решение: `Erudit.slnx`, проекты в `src/` и `tests/`. Сборка `dotnet build`, тесты `dotnet test`, запуск `dotnet run --project src/Erudit.Web` (http://localhost:5067).
 - Срок: около года (до осени 2027).
 - Нужен git.
@@ -65,6 +65,21 @@
 - **Проверено 2026-10-17:** ссылка `https://max.ru/id231107791231_bot?start=<payload>` присылает боту `bot_started` с полем `payload` — и для нового пользователя, и для уже открытого диалога (два разных телефона). Вход по QR через бота реализуем.
 - UI-библиотека: MudBlazor (предварительно).
 - Один бот на всех: `@id231107791231_bot` (создан 2026-10-17). Ссылки: `https://max.ru/id231107791231_bot`, мини-приложение — `...?startapp`. Токен — только в User Secrets.
+
+### Модель данных (этап 1, согласовано 2026-10-17)
+- Код сущностей — `Erudit.Domain` (папки `People`, `School`, `Calendar`, `Lessons`, `Accounting`); маппинг в таблицы — `Erudit.Infrastructure/Persistence/Configurations`; миграции — `Erudit.Infrastructure/Persistence/Migrations`.
+- Миграции: `dotnet ef migrations add <Имя> --project src/Erudit.Infrastructure --startup-project src/Erudit.Web --output-dir Persistence/Migrations`, применить — `dotnet ef database update --project src/Erudit.Infrastructure --startup-project src/Erudit.Web` (`dotnet-ef` — локальный инструмент, `dotnet tool restore`).
+- Одна таблица `Person` для всех людей, роли — `PersonRole` (Admin, HeadTeacher, Teacher, Student, Parent). Классный руководитель — не роль, а `SchoolClass.ClassTeacherId` (может вести несколько классов).
+- Один человек — один телефон (`Phone`, формат +79991234567, уникальный); `MaxUserId` уникальный.
+- Классы привязаны к учебному году (`AcademicYear`); состав — `ClassMembership` с датами `FromDate`/`ToDate`: перевод 7а → 7б закрывает старую запись и открывает новую. В каждый момент у ученика ровно один класс (уникальный индекс по «открытой» записи).
+- Серия: один день недели, каждую неделю (вторник и четверг — две серии). `SeriesPlanner` генерирует занятия, пропуская нерабочие дни.
+- Запись на всю серию — `SeriesEnrollment`: создаёт записи на все будущие занятия серии (и на добавленные позже); отказаться можно от отдельного занятия.
+- Занятие: `StartsAt` (UTC, `timestamptz`) + `DurationMinutes`; `ActualDurationMinutes` — если учитель поправил; `Status`: Planned / Held / NotHeld / Cancelled.
+- Запись (`Enrollment`): уникальна по (занятие, ученик); `Status` Active / Declined / Removed; `Source` Self / Teacher / Parent / Series; `Attendance` Unknown / Present / Absent.
+- Каникулы (`Vacation`) могут ограничиваться параллелями (`GradeFrom`/`GradeTo`), например только 1-е классы.
+- Производственный календарь в БД — только исключения (`CalendarDay`); остальные дни: Пн–Пт рабочие. `IsManual` — правка администратора, автозагрузка её не трогает.
+- Ничего не удаляем физически (`IsActive`, статусы); каскадное удаление запрещено везде, кроме `PersonRole`.
+- Enum в БД хранятся строками; имена таблиц и колонок — snake_case (`EFCore.NamingConventions`); id — `int` (у журнала — `long`).
 
 ### Справочники
 - Классы (7А, 9Б), предметы, связь учитель ↔ предметы ↔ классы.

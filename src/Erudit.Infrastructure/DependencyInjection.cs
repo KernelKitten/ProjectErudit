@@ -1,4 +1,6 @@
 using Erudit.Infrastructure.Max;
+using Erudit.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -13,6 +15,15 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
+        var connectionString = configuration.GetConnectionString("Erudit")
+            ?? throw new InvalidOperationException(
+                "Не задана строка подключения ConnectionStrings:Erudit. Добавьте её в User Secrets.");
+
+        services.AddDbContext<EruditDbContext>(options => options
+            .UseNpgsql(connectionString)
+            // Имена таблиц и колонок в стиле PostgreSQL: lesson_periods, starts_at.
+            .UseSnakeCaseNamingConvention());
+
         services.AddOptions<MaxOptions>()
             .Bind(configuration.GetSection(MaxOptions.SectionName))
             .Validate(o => !string.IsNullOrWhiteSpace(o.BotToken),
