@@ -3,6 +3,7 @@ using Erudit.Infrastructure.Calendar;
 using Hangfire;
 using Hangfire.PostgreSql;
 using Erudit.Infrastructure.Max;
+using Erudit.Infrastructure.People;
 using Erudit.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -67,6 +68,7 @@ public static class DependencyInjection
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<BotUpdateHandler>();
         services.AddScoped<PersonRegistration>();
+        services.AddScoped<TeacherService>();
         services.AddSingleton<LoginRequestService>();
 
         var useLongPolling = configuration.GetValue<bool>($"{MaxOptions.SectionName}:{nameof(MaxOptions.UseLongPolling)}");

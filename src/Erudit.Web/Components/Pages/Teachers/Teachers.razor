@@ -1,0 +1,139 @@
+@page "/teachers"
+@attribute [Authorize(Roles = AppRoles.DirectoryManagers)]
+@using Erudit.Domain.People
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject TimeProvider Time
+
+<PageTitle>Учителя</PageTitle>
+
+<MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h5" Class="flex-grow-1">Учителя</MudText>
+    <MudSwitch T="bool" Value="_showFired" ValueChanged="ToggleFiredAsync" Label="Показывать уволенных" Color="Color.Primary" />
+    @if (_rows is { Count: 0 } && !_anyTeachers)
+    {
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.UploadFile" OnClick="ImportAsync">
+            Добавить учителей (из Excel)
+        </MudButton>
+    }
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="() => EditAsync(null)">
+        Добавить учителя
+    </MudButton>
+</MudStack>
+
+<MudTextField @bind-Value="_search" Immediate Placeholder="Поиск по фамилии" Adornment="Adornment.Start"
+              AdornmentIcon="@Icons.Material.Outlined.Search" Class="mb-2" Style="max-width: 320px" />
+
+<MudTable Items="Filtered" Dense Hover Loading="_rows is null">
+    <HeaderContent>
+        <MudTh>ФИО</MudTh>
+        <MudTh>Телефон</MudTh>
+        <MudTh>Роли</MudTh>
+        <MudTh>Классный руководитель</MudTh>
+        <MudTh>MAX</MudTh>
+        <MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="ФИО">
+            @context.Person.FullName
+            @if (!context.Person.IsActive)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Error" Class="ml-2">уволился</MudChip>
+            }
+        </MudTd>
+        <MudTd DataLabel="Телефон">
+            @if (context.Person.Phone is null)
+            {
+                <MudTooltip Text="Без телефона учитель не сможет войти">
+                    <MudText Typo="Typo.body2" Color="Color.Warning">⚠ нет</MudText>
+                </MudTooltip>
+            }
+            else
+            {
+                @context.Person.Phone
+            }
+        </MudTd>
+        <MudTd DataLabel="Роли">
+            @foreach (var role in context.Person.Roles.Where(r => r.Role is Role.HeadTeacher or Role.Admin))
+            {
+                <MudChip T="string" Size="Size.Small">@(role.Role == Role.Admin ? "администратор" : "завуч")</MudChip>
+            }
+        </MudTd>
+        <MudTd DataLabel="Классный руководитель">@string.Join(", ", context.Classes)</MudTd>
+        <MudTd DataLabel="MAX">
+            @if (context.Person.MaxUserId is not null)
+            {
+                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+            }
+        </MudTd>
+        <MudTd Style="text-align: right">
+            <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Изменить"
+                           OnClick="() => EditAsync(context.Person.Id)" />
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        Учителей пока нет. Загрузите список из Excel или добавьте учителей по одному.
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+    private sealed record Row(Person Person, List<string> Classes);
+
+    private List<Row>? _rows;
+    private bool _showFired;
+    private bool _anyTeachers;
+    private string _search = "";
+
+    private IEnumerable<Row> Filtered => (_rows ?? []).Where(r =>
+        _search.Length == 0 || r.Person.FullName.Contains(_search, StringComparison.CurrentCultureIgnoreCase));
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var today = DateOnly.FromDateTime(SchoolTime.ToSchool(Time.GetUtcNow().UtcDateTime));
+        await using var db = await DbFactory.CreateDbContextAsync();
+        // Есть ли учителя вообще (включая уволенных): Excel — только для совсем пустого списка.
+        _anyTeachers = await db.People.AnyAsync(p => p.Roles.Any(r => r.Role == Role.Teacher));
+
+        var people = await db.People.Include(p => p.Roles)
+            .Where(p => p.Roles.Any(r => r.Role == Role.Teacher) && (_showFired || p.IsActive))
+            .OrderBy(p => p.LastName).ThenBy(p => p.FirstName)
+            .ToListAsync();
+        var classes = await db.SchoolClasses
+            .Where(c => c.ClassTeacherId != null && c.AcademicYear.StartDate <= today && c.AcademicYear.EndDate >= today)
+            .Select(c => new { c.ClassTeacherId, Name = c.Grade + c.Letter })
+            .ToListAsync();
+
+        _rows = people.Select(p => new Row(p, classes.Where(c => c.ClassTeacherId == p.Id).Select(c => c.Name).ToList())).ToList();
+    }
+
+    private async Task ToggleFiredAsync(bool value)
+    {
+        _showFired = value;
+        await LoadAsync();
+    }
+
+    private async Task EditAsync(int? id)
+    {
+        var dialog = await DialogService.ShowAsync<TeacherDialog>(id is null ? "Новый учитель" : "Учитель",
+            new DialogParameters<TeacherDialog> { { d => d.PersonId, id } },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task ImportAsync()
+    {
+        var dialog = await DialogService.ShowAsync<TeacherImportDialog>("Добавить учителей из Excel", new DialogParameters(),
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if (await dialog.Result is { Canceled: false, Data: int count })
+        {
+            Snackbar.Add($"Загружено учителей: {count}", Severity.Success);
+            await LoadAsync();
+        }
+    }
+}

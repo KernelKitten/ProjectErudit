@@ -29,6 +29,7 @@
 
         @if (role is AppRoles.Admin or AppRoles.HeadTeacher)
         {
+            <MudNavLink Href="teachers" Icon="@Icons.Material.Outlined.Badge">Учителя</MudNavLink>
             <MudNavLink Href="classes" Icon="@Icons.Material.Outlined.Groups">Классы</MudNavLink>
             <MudNavGroup Title="Справочники" Icon="@Icons.Material.Outlined.MenuBook" Expanded>
                 <MudNavLink Href="directories/subjects">Предметы</MudNavLink>

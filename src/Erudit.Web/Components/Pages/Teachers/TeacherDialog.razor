@@ -1,0 +1,176 @@
+@* Карточка учителя: добавление и правка. Завучей и администраторов назначает только администратор. *@
+@using Erudit.Domain.Lessons
+@using Erudit.Domain.People
+@using Erudit.Infrastructure.People
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject TimeProvider Time
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="_valid">
+            <MudTextField @bind-Value="_fullName" Label="ФИО" Placeholder="Иванова Мария Петровна" Required
+                          RequiredError="Укажите ФИО" MaxLength="200" Immediate AutoFocus
+                          Validation="@(new Func<string, string?>(ValidateName))" />
+            <MudTextField @bind-Value="_phone" Label="Телефон" Placeholder="+7 900 123-45-67" MaxLength="30"
+                          Validation="@(new Func<string, string?>(ValidatePhone))"
+                          HelperText="@(string.IsNullOrWhiteSpace(_phone) ? "Без телефона учитель не сможет войти в MAX" : null)" />
+
+            <MudText Typo="Typo.subtitle2" Class="mt-4">Дополнительные роли</MudText>
+            <MudCheckBox @bind-Value="_isHeadTeacher" Label="Завуч" Disabled="!_editorIsAdmin" Dense />
+            <MudCheckBox @bind-Value="_isAdmin" Label="Администратор" Disabled="!_editorIsAdmin" Dense />
+            @if (!_editorIsAdmin)
+            {
+                <MudText Typo="Typo.caption">Завучей и администраторов назначает администратор.</MudText>
+            }
+
+            @if (PersonId is not null)
+            {
+                <MudSwitch @bind-Value="_fired" Label="Уволился" Color="Color.Error" Class="mt-3" />
+                @if (_fired && _consequences.Count > 0)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense>
+                        @foreach (var line in _consequences)
+                        {
+                            <div>@line</div>
+                        }
+                        <div>Занятия и классы сами не изменятся — передайте их другому учителю.</div>
+                    </MudAlert>
+                }
+            }
+        </MudForm>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense Class="mt-2">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Отмена</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveAsync">Сохранить</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+
+    /// <summary>Кого правим; пусто — новый учитель.</summary>
+    [Parameter] public int? PersonId { get; set; }
+
+    private MudForm? _form;
+    private bool _valid;
+    private string? _error;
+    private string _fullName = "";
+    private string? _phone;
+    private bool _isHeadTeacher;
+    private bool _isAdmin;
+    private bool _fired;
+    private bool _editorIsAdmin;
+    private List<string> _consequences = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _editorIsAdmin = (await AuthState).User.IsInRole(AppRoles.Admin);
+        if (PersonId is null)
+        {
+            return;
+        }
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var person = await db.People.Include(p => p.Roles).SingleAsync(p => p.Id == PersonId);
+        _fullName = person.FullName;
+        _phone = person.Phone;
+        _isHeadTeacher = person.HasRole(Role.HeadTeacher);
+        _isAdmin = person.HasRole(Role.Admin);
+        _fired = !person.IsActive;
+
+        // Что останется «висеть», если учитель уволится, — покажем при включении «Уволился».
+        var now = Time.GetUtcNow().UtcDateTime;
+        var today = DateOnly.FromDateTime(SchoolTime.ToSchool(now));
+        var lessons = await db.Lessons.CountAsync(l => l.TeacherId == PersonId && l.StartsAt > now && l.Status == LessonStatus.Planned);
+        var classes = await db.SchoolClasses.Where(c => c.ClassTeacherId == PersonId && c.AcademicYear.EndDate >= today)
+            .Select(c => c.Grade + c.Letter).ToListAsync();
+        if (lessons > 0)
+        {
+            _consequences.Add($"Будущих занятий: {lessons}.");
+        }
+        if (classes.Count > 0)
+        {
+            _consequences.Add($"Классный руководитель: {string.Join(", ", classes)}.");
+        }
+    }
+
+    private static string? ValidateName(string text) =>
+        PersonName.TryParse(text) is null ? "Нужны хотя бы фамилия и имя" : null;
+
+    private static string? ValidatePhone(string? text) =>
+        string.IsNullOrWhiteSpace(text) || PhoneNumber.Normalize(text) is not null ? null : "Не похоже на российский номер";
+
+    private async Task SaveAsync()
+    {
+        await _form!.ValidateAsync();
+        if (!_valid)
+        {
+            return;
+        }
+        var user = (await AuthState).User;
+        var name = PersonName.TryParse(_fullName)!;
+        var phone = PhoneNumber.Normalize(_phone);
+
+        await using var db = await DbFactory.CreateForAsync(user);
+        Person person;
+
+        // Один человек — один телефон: номер у другого человека?
+        var owner = phone is null ? null
+            : await db.People.Include(p => p.Roles).SingleOrDefaultAsync(p => p.Phone == phone && p.Id != PersonId);
+        if (owner is not null)
+        {
+            var problem = PersonId is null ? TeacherService.CheckPhoneOwner(owner, name) : $"Номер уже у: {owner.FullName}";
+            if (problem is not null)
+            {
+                _error = problem;
+                return;
+            }
+            person = owner; // тот же человек (например, родитель) — станет и учителем
+        }
+        else if (PersonId is null)
+        {
+            person = db.People.Add(new Person()).Entity;
+        }
+        else
+        {
+            person = await db.People.Include(p => p.Roles).SingleAsync(p => p.Id == PersonId);
+        }
+
+        if (_editorIsAdmin && person.Id == user.GetPersonId() && !_isAdmin)
+        {
+            _error = "Нельзя снять роль администратора с самого себя — иначе управлять системой станет некому.";
+            return;
+        }
+
+        (person.LastName, person.FirstName, person.MiddleName) = (name.LastName, name.FirstName, name.MiddleName);
+        person.Phone = phone;
+        person.IsActive = !_fired;
+        SetRole(person, Role.Teacher, true);
+        if (_editorIsAdmin)
+        {
+            SetRole(person, Role.HeadTeacher, _isHeadTeacher);
+            SetRole(person, Role.Admin, _isAdmin);
+        }
+
+        await db.SaveChangesAsync();
+        Dialog.Close(DialogResult.Ok(true));
+    }
+
+    private static void SetRole(Person person, Role role, bool has)
+    {
+        var existing = person.Roles.FirstOrDefault(r => r.Role == role);
+        if (has && existing is null)
+        {
+            person.Roles.Add(new PersonRole { Role = role });
+        }
+        else if (!has && existing is not null)
+        {
+            person.Roles.Remove(existing);
+        }
+    }
+}
