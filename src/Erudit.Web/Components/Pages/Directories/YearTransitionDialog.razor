@@ -1,0 +1,103 @@
+@* Перевод школы на новый учебный год: предпросмотр → подтверждение → перевод одной транзакцией. *@
+@using Erudit.Infrastructure.School
+@inject IServiceScopeFactory Scopes
+@inject IDialogService DialogService
+
+<MudDialog>
+    <DialogContent>
+        @if (_plan is null)
+        {
+            <MudProgressLinear Indeterminate />
+        }
+        else
+        {
+            <MudText Class="mb-2">Из <b>@_plan.FromYearName</b> в <b>@_plan.NextYearName</b> (с @_plan.NextStart.ToString("dd.MM.yyyy")).</MudText>
+            @if (_plan.Blocked is not null)
+            {
+                <MudAlert Severity="Severity.Info">@_plan.Blocked</MudAlert>
+            }
+            else
+            {
+                <MudSimpleTable Dense Style="max-height: 45vh; overflow-y: auto" Class="mb-2">
+                    <thead><tr><th>Новый класс</th><th>Из класса</th><th>Учеников</th><th>Классный руководитель</th></tr></thead>
+                    <tbody>
+                        @foreach (var c in _plan.NewClasses)
+                        {
+                            <tr>
+                                <td><b>@c.Name</b></td>
+                                <td>@(c.FromClasses.Count == 0 ? "новый" : string.Join(", ", c.FromClasses))</td>
+                                <td>@c.Students</td>
+                                <td>
+                                    @if (c.ClassTeacher is null)
+                                    {
+                                        <MudText Typo="Typo.body2" Color="Color.Warning">назначить вручную</MudText>
+                                    }
+                                    else
+                                    {
+                                        @c.ClassTeacher
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+                <MudText Typo="Typo.body2">Выпускников (11 классы): <b>@_plan.Graduates</b> — их состав закроется 31 августа.</MudText>
+                <MudText Typo="Typo.body2">У 5-х классов руководителя назначьте на странице «Классы». Учеников новых 1-х классов загрузите из Excel.</MudText>
+                <MudText Typo="Typo.body2">Не сдавших экзамены отметьте «Выбыл» на странице класса.</MudText>
+            }
+        }
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-2">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Отмена</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="ApplyAsync"
+                   Disabled="_plan is null || _plan.Blocked is not null || _busy">Перевести</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+    [Parameter] public int FromYearId { get; set; }
+
+    private TransitionPlan? _plan;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var scope = Scopes.CreateAsyncScope();
+        _plan = await scope.ServiceProvider.GetRequiredService<SchoolYearTransition>().PreviewAsync(FromYearId);
+    }
+
+    private async Task ApplyAsync()
+    {
+        var confirmed = await DialogService.ShowMessageBoxAsync("Перевести школу?",
+            $"Все классы {_plan!.FromYearName} перейдут в {_plan.NextYearName}. Отменить перевод кнопкой нельзя.",
+            yesText: "Перевести", cancelText: "Отмена");
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await using var scope = Scopes.CreateAsyncScope();
+            scope.ServiceProvider.GetRequiredService<EruditDbContext>().CurrentPersonId = (await AuthState).User.GetPersonId();
+            var done = await scope.ServiceProvider.GetRequiredService<SchoolYearTransition>().ApplyAsync(FromYearId);
+            Dialog.Close(DialogResult.Ok(done.NextYearName));
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

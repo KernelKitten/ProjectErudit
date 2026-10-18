@@ -19,9 +19,10 @@ public class DevDataTests(TestDatabase database)
     {
         await using var db = database.CreateContext();
 
-        Assert.Equal(12, await db.SchoolClasses.CountAsync());
-        Assert.Equal(8, await db.People.CountAsync(p => p.Roles.Any(r => r.Role == Role.Teacher)));
-        Assert.Equal(120, await db.People.CountAsync(p => p.Roles.Any(r => r.Role == Role.Student)));
+        // Количества сразу после заливки (другие тесты потом добавляют свои данные).
+        Assert.Equal(12, database.SeededClasses);
+        Assert.Equal(8, database.SeededTeachers);
+        Assert.Equal(120, database.SeededStudents);
         Assert.Equal(10, await db.LessonPeriods.CountAsync());
         Assert.True(await db.Lessons.CountAsync() > 50);
     }

@@ -13,7 +13,10 @@
         Добавить
     </MudButton>
 </MudStack>
-<MudText Typo="Typo.body2" Class="mb-4">Перевод всей школы на новый учебный год — отдельной кнопкой (будет позже на этом этапе).</MudText>
+<MudText Typo="Typo.body2" Class="mb-4">
+    В конце августа переведите школу на следующий учебный год кнопкой <MudIcon Icon="@Icons.Material.Outlined.Upgrade" Size="Size.Small" Style="vertical-align: middle" />
+    в строке текущего года. С 27 августа по 5 сентября бот будет напоминать об этом администраторам и завучам.
+</MudText>
 
 <MudTable Items="_years" Dense Hover Loading="_years is null">
     <HeaderContent>
@@ -32,7 +35,14 @@
         </MudTd>
         <MudTd DataLabel="Даты">@context.Year.StartDate.ToString("dd.MM.yyyy") — @context.Year.EndDate.ToString("dd.MM.yyyy")</MudTd>
         <MudTd DataLabel="Классов">@context.Classes</MudTd>
-        <MudTd Style="text-align: right">
+        <MudTd Style="text-align: right; white-space: nowrap">
+            @if (context.Classes > 0)
+            {
+                <MudTooltip Text="Перевести школу на следующий учебный год">
+                    <MudIconButton Icon="@Icons.Material.Outlined.Upgrade" Size="Size.Small" Color="Color.Primary"
+                                   aria-label="Перевести школу на следующий учебный год" OnClick="() => TransitionAsync(context.Year.Id)" />
+                </MudTooltip>
+            }
             <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Изменить"
                            OnClick="() => EditAsync(context.Year.Id)" />
         </MudTd>
@@ -58,6 +68,20 @@
             .Select(y => new { Year = y, Classes = db.SchoolClasses.Count(c => c.AcademicYearId == y.Id) })
             .ToListAsync();
         _years = rows.Select(r => (r.Year, r.Classes)).ToList();
+    }
+
+    [Inject] private ISnackbar Snackbar { get; set; } = null!;
+
+    private async Task TransitionAsync(int fromYearId)
+    {
+        var dialog = await DialogService.ShowAsync<YearTransitionDialog>("Перевод школы на новый учебный год",
+            new DialogParameters<YearTransitionDialog> { { d => d.FromYearId, fromYearId } },
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if (await dialog.Result is { Canceled: false, Data: string nextYear })
+        {
+            Snackbar.Add($"Школа переведена на {nextYear} учебный год", Severity.Success);
+            await LoadAsync();
+        }
     }
 
     private async Task EditAsync(int? id)

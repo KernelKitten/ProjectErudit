@@ -4,6 +4,7 @@ using Hangfire;
 using Hangfire.PostgreSql;
 using Erudit.Infrastructure.Max;
 using Erudit.Infrastructure.People;
+using Erudit.Infrastructure.School;
 using Erudit.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -71,6 +72,9 @@ public static class DependencyInjection
         services.AddScoped<TeacherService>();
         services.AddScoped<StudentService>();
         services.AddScoped<DataCheckService>();
+        services.AddScoped<SchoolYearTransition>();
+        services.AddScoped<SchoolYearReminderJob>();
+        services.AddOptions<SiteOptions>().Bind(configuration.GetSection(SiteOptions.SectionName));
         services.AddSingleton<LoginRequestService>();
 
         var useLongPolling = configuration.GetValue<bool>($"{MaxOptions.SectionName}:{nameof(MaxOptions.UseLongPolling)}");
@@ -89,6 +93,10 @@ public static class DependencyInjection
         // Каждый понедельник в 04:00 по школьному времени.
         jobs.AddOrUpdate<ProductionCalendarJob>(ProductionCalendarJob.RecurringJobId,
             job => job.RunAsync(CancellationToken.None), "0 4 * * 1",
+            new RecurringJobOptions { TimeZone = Erudit.Domain.SchoolTime.Zone });
+        // Каждый день в 9:00; сама задача решает, пора ли напоминать (27.08–05.09 и перевод не сделан).
+        jobs.AddOrUpdate<SchoolYearReminderJob>(SchoolYearReminderJob.RecurringJobId,
+            job => job.RunAsync(CancellationToken.None), "0 9 * * *",
             new RecurringJobOptions { TimeZone = Erudit.Domain.SchoolTime.Zone });
     }
 }

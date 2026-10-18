@@ -39,6 +39,33 @@ public sealed class TestDatabase : IAsyncLifetime
         await using var db = CreateContext();
         await db.Database.MigrateAsync();
         await DevDataSeeder.SeedAsync(db, Now);
+
+        // Запоминаем, что получилось сразу после заливки: другие тесты потом добавляют свои классы и людей,
+        // и проверка «12 классов» не должна зависеть от того, в каком порядке запустились тесты.
+        SeededClasses = await db.SchoolClasses.CountAsync();
+        SeededTeachers = await db.People.CountAsync(p => p.Roles.Any(r => r.Role == Domain.People.Role.Teacher));
+        SeededStudents = await db.People.CountAsync(p => p.Roles.Any(r => r.Role == Domain.People.Role.Student));
+    }
+
+    public int SeededClasses { get; private set; }
+    public int SeededTeachers { get; private set; }
+    public int SeededStudents { get; private set; }
+
+    /// <summary>
+    /// Отдельный учебный год для теста — «песочница»: классы и ученики теста не смешиваются с тестовыми данными
+    /// и с другими тестами. У каждого теста свой год начала.
+    /// </summary>
+    public async Task<Domain.School.AcademicYear> CreateSandboxYearAsync(int startYear)
+    {
+        await using var db = CreateContext();
+        var year = db.AcademicYears.Add(new Domain.School.AcademicYear
+        {
+            Name = $"{startYear}/{(startYear + 1) % 100:D2}",
+            StartDate = new DateOnly(startYear, 9, 1),
+            EndDate = new DateOnly(startYear + 1, 8, 31),
+        }).Entity;
+        await db.SaveChangesAsync();
+        return year;
     }
 
     /// <summary>
