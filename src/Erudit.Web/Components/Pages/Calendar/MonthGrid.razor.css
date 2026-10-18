@@ -1,0 +1,88 @@
+/* Стили сетки месяца (scoped CSS — действуют только внутри MonthGrid). */
+
+.erudit-month-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+}
+
+.erudit-month-head {
+    text-align: center;
+    font-weight: 500;
+    color: #666;
+    padding: 4px 0;
+}
+
+.erudit-day {
+    position: relative;
+    aspect-ratio: 1.2;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 4px 6px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 1.05rem;
+}
+
+.erudit-day-off {
+    color: #c62828;
+    background: #fdecea;
+}
+
+.erudit-vacation {
+    background: #fff4d6;
+    border-color: #f0b429;
+}
+
+.erudit-day-off.erudit-vacation {
+    background: linear-gradient(135deg, #fdecea 50%, #fff4d6 50%);
+}
+
+.erudit-vacation-part {
+    border: 2px dashed #f0b429;
+}
+
+.erudit-today {
+    outline: 2px solid #1F3864;
+}
+
+::deep .erudit-day-manual {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    opacity: 0.6;
+}
+
+/* Компактный вид: несколько месяцев на экране — клетки меньше, число по центру. */
+.erudit-compact .erudit-month-title {
+    font-weight: 500;
+    text-transform: capitalize;
+    margin-bottom: 4px;
+}
+
+.erudit-compact .erudit-month-grid {
+    gap: 2px;
+}
+
+.erudit-compact .erudit-month-head {
+    font-size: 0.7rem;
+    padding: 0;
+}
+
+.erudit-compact .erudit-day {
+    aspect-ratio: 1;
+    padding: 0;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.erudit-compact ::deep .erudit-day-manual {
+    display: none;
+}
+
+.erudit-compact .erudit-day.erudit-vacation-part {
+    border-width: 1px;
+}

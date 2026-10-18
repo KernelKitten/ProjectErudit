@@ -1,0 +1,67 @@
+@* Сетка одного месяца. Используется и в виде «месяц» (крупно), и в видах «квартал / полгода / год» (компактно).
+   Сам ничего не загружает: дни приходят готовыми через параметр Days. *@
+
+<div class="erudit-month @(Compact ? "erudit-compact" : null)">
+    @if (Compact)
+    {
+        <div class="erudit-month-title">@Month.ToString("MMMM")</div>
+    }
+    <div class="erudit-month-grid">
+        @foreach (var name in DayNames)
+        {
+            <div class="erudit-month-head">@name</div>
+        }
+        @foreach (var cell in Cells())
+        {
+            if (cell is null)
+            {
+                <div></div> @* пустые клетки до 1-го числа и после последнего *@
+                continue;
+            }
+            <div class="@CellClass(cell)" title="@cell.Hint" @onclick="() => OnDayClick.InvokeAsync(cell)">
+                <span>@cell.Date.Day</span>
+                @if (cell.IsManual)
+                {
+                    <MudIcon Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" Class="erudit-day-manual" />
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly string[] DayNames = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+
+    /// <summary>Первое число месяца.</summary>
+    [Parameter, EditorRequired] public DateOnly Month { get; set; }
+
+    /// <summary>Дни (можно больше, чем в месяце — лишние не показываются).</summary>
+    [Parameter, EditorRequired] public IReadOnlyDictionary<DateOnly, CalendarCell> Days { get; set; } = null!;
+
+    /// <summary>Компактный вид — для нескольких месяцев на экране.</summary>
+    [Parameter] public bool Compact { get; set; }
+
+    [Parameter] public EventCallback<CalendarCell> OnDayClick { get; set; }
+
+    /// <summary>Клетки сетки по неделям с понедельника; null — пустая клетка.</summary>
+    private IEnumerable<CalendarCell?> Cells()
+    {
+        var offset = ((int)Month.DayOfWeek + 6) % 7; // сколько пустых клеток до 1-го числа
+        for (var i = 0; i < offset; i++)
+        {
+            yield return null;
+        }
+        for (var date = Month; date.Month == Month.Month; date = date.AddDays(1))
+        {
+            yield return Days.GetValueOrDefault(date);
+        }
+    }
+
+    private static string CellClass(CalendarCell c) => string.Join(' ', new[]
+    {
+        "erudit-day",
+        c.IsWorking ? null : "erudit-day-off",
+        c.VacationAll ? "erudit-vacation" : c.VacationPart ? "erudit-vacation-part" : null,
+        c.IsToday ? "erudit-today" : null,
+    }.Where(s => s is not null));
+}

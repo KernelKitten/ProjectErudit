@@ -11,10 +11,16 @@
 <PageTitle>Календарь</PageTitle>
 
 <MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-2">
-    <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" OnClick="() => MoveAsync(-1)" aria-label="Предыдущий месяц" />
-    <MudText Typo="Typo.h5" Style="min-width: 200px; text-align: center">@_month.ToString("MMMM yyyy")</MudText>
-    <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" OnClick="() => MoveAsync(1)" aria-label="Следующий месяц" />
+    <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" OnClick="() => MoveAsync(-1)" aria-label="Назад" />
+    <MudText Typo="Typo.h5" Style="min-width: 220px; text-align: center">@Title</MudText>
+    <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" OnClick="() => MoveAsync(1)" aria-label="Вперёд" />
     <MudButton Variant="Variant.Text" OnClick="TodayAsync">Сегодня</MudButton>
+    <MudToggleGroup T="CalendarView" Value="_view" ValueChanged="ChangeViewAsync" Size="Size.Small" Outlined Delimiters>
+        <MudToggleItem Value="CalendarView.Month" Text="Месяц" />
+        <MudToggleItem Value="CalendarView.Quarter" Text="Квартал" />
+        <MudToggleItem Value="CalendarView.HalfYear" Text="Полгода" />
+        <MudToggleItem Value="CalendarView.Year" Text="Год" />
+    </MudToggleGroup>
     <MudSpacer />
     @if (_canEdit)
     {
@@ -35,27 +41,27 @@
     <MudProgressLinear Indeterminate Class="mb-2" />
 }
 
-<div class="erudit-calendar">
-    @foreach (var name in DayNames)
-    {
-        <div class="erudit-calendar-head">@name</div>
-    }
-    @foreach (var cell in _cells)
-    {
-        <div class="@CellClass(cell)" title="@cell.Hint" @onclick="() => EditDayAsync(cell)">
-            <span class="erudit-calendar-number">@cell.Date.Day</span>
-            @if (cell.IsManual)
-            {
-                <MudIcon Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" Class="erudit-calendar-manual" />
-            }
-        </div>
-    }
-</div>
+@if (_view == CalendarView.Month)
+{
+    <div style="max-width: 700px">
+        <MonthGrid Month="_start" Days="_days" OnDayClick="EditDayAsync" />
+    </div>
+}
+else
+{
+    @* Несколько месяцев: сетка сама раскладывает их по 2–4 в ряд в зависимости от ширины экрана. *@
+    <div class="erudit-months">
+        @foreach (var month in Months)
+        {
+            <MonthGrid Month="month" Days="_days" Compact OnDayClick="EditDayAsync" />
+        }
+    </div>
+}
 
 <MudStack Row Wrap="Wrap.Wrap" Spacing="4" Class="mt-3">
-    <span><span class="erudit-legend erudit-day-off"></span>нерабочий день</span>
-    <span><span class="erudit-legend erudit-vacation"></span>каникулы</span>
-    <span><span class="erudit-legend erudit-vacation-part"></span>каникулы у части классов</span>
+    <span><span class="erudit-legend erudit-legend-off"></span>нерабочий день</span>
+    <span><span class="erudit-legend erudit-legend-vacation"></span>каникулы</span>
+    <span><span class="erudit-legend erudit-legend-vacation-part"></span>каникулы у части классов</span>
     <span><MudIcon Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" Style="vertical-align: middle" /> исправлено вручную</span>
 </MudStack>
 @if (_canEdit)
@@ -68,44 +74,70 @@
 @code {
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
 
-    private static readonly string[] DayNames = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+    /// <summary>Вид календаря; число — сколько месяцев показываем.</summary>
+    private enum CalendarView { Month = 1, Quarter = 3, HalfYear = 6, Year = 12 }
 
-    private sealed record Cell(DateOnly Date, bool InMonth, bool IsWorking, bool IsManual, bool IsToday,
-        bool VacationAll, bool VacationPart, string? Hint);
-
+    private CalendarView _view = CalendarView.Month;
     private DateOnly _today;
-    private DateOnly _month;
-    private List<Cell> _cells = [];
+    private DateOnly _start; // первое число первого показанного месяца
+    private Dictionary<DateOnly, CalendarCell> _days = [];
     private bool _canEdit;
     private bool _busy;
+
+    private int MonthCount => (int)_view;
+
+    private IEnumerable<DateOnly> Months => Enumerable.Range(0, MonthCount).Select(i => _start.AddMonths(i));
+
+    private string Title => _view switch
+    {
+        CalendarView.Month => _start.ToString("MMMM yyyy"),
+        CalendarView.Year => $"{_start.Year} год",
+        _ => $"{_start:MMMM} — {_start.AddMonths(MonthCount - 1):MMMM yyyy}",
+    };
 
     protected override async Task OnInitializedAsync()
     {
         var user = (await AuthState).User;
         _canEdit = user.IsInRole(AppRoles.Admin) || user.IsInRole(AppRoles.HeadTeacher);
         _today = DateOnly.FromDateTime(SchoolTime.ToSchool(Time.GetUtcNow().UtcDateTime));
-        _month = new DateOnly(_today.Year, _today.Month, 1);
+        _start = AlignStart(_today);
         await LoadAsync();
     }
 
-    private async Task MoveAsync(int months)
+    /// <summary>
+    /// Начало периода, в который попадает дата: квартал — январь/апрель/июль/октябрь,
+    /// полгода — январь/июль, год — январь, месяц — сам месяц.
+    /// </summary>
+    private DateOnly AlignStart(DateOnly date)
     {
-        _month = _month.AddMonths(months);
+        var monthIndex = (date.Month - 1) / MonthCount * MonthCount; // 0, 3, 6, 9 для квартала
+        return new DateOnly(date.Year, monthIndex + 1, 1);
+    }
+
+    private async Task ChangeViewAsync(CalendarView view)
+    {
+        _view = view;
+        _start = AlignStart(_start);
+        await LoadAsync();
+    }
+
+    private async Task MoveAsync(int direction)
+    {
+        _start = _start.AddMonths(direction * MonthCount);
         await LoadAsync();
     }
 
     private async Task TodayAsync()
     {
-        _month = new DateOnly(_today.Year, _today.Month, 1);
+        _start = AlignStart(_today);
         await LoadAsync();
     }
 
-    /// <summary>Сетка месяца: с понедельника недели, где 1-е число, до воскресенья недели, где последнее.</summary>
+    /// <summary>Один запрос за весь показанный период — и для месяца, и для года.</summary>
     private async Task LoadAsync()
     {
-        var first = _month.AddDays(-(((int)_month.DayOfWeek + 6) % 7));
-        var lastOfMonth = _month.AddMonths(1).AddDays(-1);
-        var last = lastOfMonth.AddDays(6 - (((int)lastOfMonth.DayOfWeek + 6) % 7));
+        var first = _start;
+        var last = _start.AddMonths(MonthCount).AddDays(-1);
 
         await using var db = await DbFactory.CreateDbContextAsync();
         var days = await db.CalendarDays.Where(d => d.Date >= first && d.Date <= last).ToListAsync();
@@ -113,29 +145,19 @@
         var calendar = new WorkingDayCalendar(days);
         var manual = days.Where(d => d.IsManual).Select(d => d.Date).ToHashSet();
 
-        _cells = [];
+        _days = [];
         for (var date = first; date <= last; date = date.AddDays(1))
         {
             var current = date;
             var active = vacations.Where(v => current >= v.StartDate && current <= v.EndDate).ToList();
-            _cells.Add(new Cell(date, date.Month == _month.Month, calendar.IsWorkingDay(date), manual.Contains(date),
-                date == _today,
+            _days[date] = new CalendarCell(date, calendar.IsWorkingDay(date), manual.Contains(date), date == _today,
                 active.Any(v => v.GradeFrom is null && v.GradeTo is null),
                 active.Any(v => v.GradeFrom is not null || v.GradeTo is not null),
-                active.Count == 0 ? null : string.Join("; ", active.Select(v => v.Name))));
+                active.Count == 0 ? null : string.Join("; ", active.Select(v => v.Name)));
         }
     }
 
-    private static string CellClass(Cell c) => string.Join(' ', new[]
-    {
-        "erudit-calendar-day",
-        c.InMonth ? null : "erudit-other-month",
-        c.IsWorking ? null : "erudit-day-off",
-        c.VacationAll ? "erudit-vacation" : c.VacationPart ? "erudit-vacation-part" : null,
-        c.IsToday ? "erudit-today" : null,
-    }.Where(s => s is not null));
-
-    private async Task EditDayAsync(Cell cell)
+    private async Task EditDayAsync(CalendarCell cell)
     {
         if (!_canEdit)
         {
