@@ -25,7 +25,12 @@
 
             @if (PersonId is not null)
             {
-                <MudSwitch @bind-Value="_fired" Label="Уволился" Color="Color.Error" Class="mt-3" />
+                @* Самого себя уволить нельзя: иначе можно случайно потерять доступ к системе. *@
+                <MudSwitch @bind-Value="_fired" Label="Уволился" Color="Color.Error" Class="mt-3" Disabled="_isSelf" />
+                @if (_isSelf)
+                {
+                    <MudText Typo="Typo.caption" Class="d-block">Отметить уволенным самого себя нельзя — это может сделать другой администратор или завуч.</MudText>
+                }
                 @if (_fired && _consequences.Count > 0)
                 {
                     <MudAlert Severity="Severity.Warning" Dense>
@@ -65,11 +70,14 @@
     private bool _isAdmin;
     private bool _fired;
     private bool _editorIsAdmin;
+    private bool _isSelf;
     private List<string> _consequences = [];
 
     protected override async Task OnInitializedAsync()
     {
-        _editorIsAdmin = (await AuthState).User.IsInRole(AppRoles.Admin);
+        var user = (await AuthState).User;
+        _editorIsAdmin = user.IsInRole(AppRoles.Admin);
+        _isSelf = PersonId is not null && PersonId == user.GetPersonId();
         if (PersonId is null)
         {
             return;
@@ -144,6 +152,12 @@
         if (_editorIsAdmin && person.Id == user.GetPersonId() && !_isAdmin)
         {
             _error = "Нельзя снять роль администратора с самого себя — иначе управлять системой станет некому.";
+            return;
+        }
+        // Проверка и на сервере, а не только выключенным переключателем: интерфейс можно обойти.
+        if (_fired && person.Id == user.GetPersonId())
+        {
+            _error = "Нельзя отметить уволенным самого себя.";
             return;
         }
 
