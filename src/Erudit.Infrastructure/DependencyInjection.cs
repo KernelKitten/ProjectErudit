@@ -70,6 +70,7 @@ public static class DependencyInjection
         services.AddScoped<PersonRegistration>();
         services.AddScoped<TeacherService>();
         services.AddScoped<StudentService>();
+        services.AddScoped<DataCheckService>();
         services.AddSingleton<LoginRequestService>();
 
         var useLongPolling = configuration.GetValue<bool>($"{MaxOptions.SectionName}:{nameof(MaxOptions.UseLongPolling)}");

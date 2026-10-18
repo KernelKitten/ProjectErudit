@@ -1,0 +1,18 @@
+@* Заголовок раздела «что поправить»: текст и число — зелёная галочка, если проблем нет. *@
+<div class="d-flex align-center gap-2">
+    @if (Count == 0)
+    {
+        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+    }
+    else
+    {
+        <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" Size="Size.Small" />
+    }
+    <MudText>@Text</MudText>
+    <MudChip T="string" Size="Size.Small" Color="@(Count == 0 ? Color.Success : Color.Warning)">@Count</MudChip>
+</div>
+
+@code {
+    [Parameter] public string Text { get; set; } = "";
+    [Parameter] public int Count { get; set; }
+}

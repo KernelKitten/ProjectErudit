@@ -1,0 +1,175 @@
+@page "/data-check"
+@attribute [Authorize(Roles = AppRoles.DirectoryManagers)]
+@using Erudit.Domain.School
+@using Erudit.Infrastructure.People
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject IServiceScopeFactory Scopes
+@inject TimeProvider Time
+
+<PageTitle>Проверка данных</PageTitle>
+
+<MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-2">
+    <MudText Typo="Typo.h5" Class="flex-grow-1">Проверка данных</MudText>
+    <MudSelect T="int?" Value="_yearId" ValueChanged="ChangeYearAsync" Label="Учебный год" Dense Style="max-width: 180px">
+        @foreach (var y in _years)
+        {
+            <MudSelectItem T="int?" Value="y.Id">@y.Name</MudSelectItem>
+        }
+    </MudSelect>
+</MudStack>
+<MudText Typo="Typo.body2" Class="mb-4">
+    Всё ли загружено правильно, прежде чем звать учителей, учеников и родителей в систему.
+</MudText>
+
+@if (_report is null)
+{
+    <MudProgressLinear Indeterminate />
+}
+else
+{
+    <MudText Typo="Typo.h6" GutterBottom>Что поправить</MudText>
+    <MudExpansionPanels MultiExpansion Class="mb-6">
+        <MudExpansionPanel>
+            <TitleContent>
+                <ProblemTitle Text="Классы без классного руководителя" Count="_report.ClassesWithoutTeacher.Count" />
+            </TitleContent>
+            <ChildContent>
+                @foreach (var name in _report.ClassesWithoutTeacher)
+                {
+                    <MudChip T="string" Size="Size.Small">@name</MudChip>
+                }
+                <MudText Typo="Typo.body2" Class="mt-2">Назначить — на странице <MudLink Href="classes">«Классы»</MudLink>.</MudText>
+            </ChildContent>
+        </MudExpansionPanel>
+
+        <MudExpansionPanel>
+            <TitleContent>
+                <ProblemTitle Text="Ученики без телефона (ни у них, ни у родителей)" Count="_report.UnreachableStudents.Count" />
+            </TitleContent>
+            <ChildContent>
+                <MudText Typo="Typo.body2" Class="mb-2">Уведомления о занятиях этих учеников никто не получит.</MudText>
+                @foreach (var s in _report.UnreachableStudents)
+                {
+                    <div><MudLink Href="@($"classes/{s.ClassId}")">@s.ClassName</MudLink> · @s.Name</div>
+                }
+            </ChildContent>
+        </MudExpansionPanel>
+
+        <MudExpansionPanel>
+            <TitleContent>
+                <ProblemTitle Text="Учителя без телефона" Count="_report.TeachersWithoutPhone.Count" />
+            </TitleContent>
+            <ChildContent>
+                <MudText Typo="Typo.body2" Class="mb-2">Без телефона учитель не сможет войти. Добавить — на странице <MudLink Href="teachers">«Учителя»</MudLink>.</MudText>
+                @foreach (var t in _report.TeachersWithoutPhone)
+                {
+                    <div>@t</div>
+                }
+            </ChildContent>
+        </MudExpansionPanel>
+
+        <MudExpansionPanel>
+            <TitleContent>
+                <ProblemTitle Text="Попытки входа с неизвестных номеров" Count="_report.UnknownPhoneAttempts.Count(a => !a.NowKnown)" />
+            </TitleContent>
+            <ChildContent>
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    Человек поделился номером в боте, но номера нет в списках. Чаще всего номер записан с ошибкой
+                    у ученика, родителя или учителя.
+                </MudText>
+                <MudSimpleTable Dense>
+                    <thead><tr><th>Номер</th><th>Последняя попытка</th><th>Попыток</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var a in _report.UnknownPhoneAttempts)
+                        {
+                            <tr>
+                                <td>@a.Phone</td>
+                                <td>@a.LastAttempt.ToString("dd.MM.yyyy HH:mm")</td>
+                                <td>@a.Count</td>
+                                <td>
+                                    @if (a.NowKnown)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Success">номер уже добавлен</MudChip>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </ChildContent>
+        </MudExpansionPanel>
+    </MudExpansionPanels>
+
+    <MudText Typo="Typo.h6" GutterBottom>Сводка по классам</MudText>
+    <MudTable Items="_report.Classes" Dense Hover>
+        <HeaderContent>
+            <MudTh>Класс</MudTh>
+            <MudTh>Классный руководитель</MudTh>
+            <MudTh>Учеников</MudTh>
+            <MudTh>С телефоном</MudTh>
+            <MudTh>Ученики в MAX</MudTh>
+            <MudTh>Родителей</MudTh>
+            <MudTh>Родители в MAX</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Класс"><MudLink Href="@($"classes/{context.ClassId}")"><b>@context.ClassName</b></MudLink></MudTd>
+            <MudTd DataLabel="Классный руководитель">
+                @if (context.ClassTeacher is null)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Warning">⚠ не назначен</MudText>
+                }
+                else
+                {
+                    @context.ClassTeacher
+                }
+            </MudTd>
+            <MudTd DataLabel="Учеников">@context.Students</MudTd>
+            <MudTd DataLabel="С телефоном">@context.StudentsWithPhone</MudTd>
+            <MudTd DataLabel="Ученики в MAX">@context.StudentsRegistered</MudTd>
+            <MudTd DataLabel="Родителей">@context.Parents</MudTd>
+            <MudTd DataLabel="Родители в MAX">@context.ParentsRegistered</MudTd>
+        </RowTemplate>
+        <FooterContent>
+            <MudTd><b>Всего</b></MudTd>
+            <MudTd></MudTd>
+            <MudTd><b>@_report.Classes.Sum(c => c.Students)</b></MudTd>
+            <MudTd><b>@_report.Classes.Sum(c => c.StudentsWithPhone)</b></MudTd>
+            <MudTd><b>@_report.Classes.Sum(c => c.StudentsRegistered)</b></MudTd>
+            <MudTd><b>@_report.Classes.Sum(c => c.Parents)</b></MudTd>
+            <MudTd><b>@_report.Classes.Sum(c => c.ParentsRegistered)</b></MudTd>
+        </FooterContent>
+        <NoRecordsContent>В этом учебном году классов нет.</NoRecordsContent>
+    </MudTable>
+}
+
+@code {
+    private List<AcademicYear> _years = [];
+    private int? _yearId;
+    private DataCheckReport? _report;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _years = await db.AcademicYears.OrderByDescending(y => y.StartDate).ToListAsync();
+        var today = DateOnly.FromDateTime(SchoolTime.ToSchool(Time.GetUtcNow().UtcDateTime));
+        _yearId = (_years.FirstOrDefault(y => y.Contains(today)) ?? _years.FirstOrDefault())?.Id;
+        await LoadAsync();
+    }
+
+    private async Task ChangeYearAsync(int? yearId)
+    {
+        _yearId = yearId;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_yearId is null)
+        {
+            _report = new DataCheckReport([], [], [], [], []);
+            return;
+        }
+        await using var scope = Scopes.CreateAsyncScope();
+        _report = await scope.ServiceProvider.GetRequiredService<DataCheckService>().BuildAsync(_yearId.Value);
+    }
+}
