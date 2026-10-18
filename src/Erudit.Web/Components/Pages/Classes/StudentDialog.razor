@@ -1,0 +1,115 @@
+@* Карточка ученика с родителями (до двух). Сохраняет через StudentService — там все правила. *@
+@using Erudit.Infrastructure.People
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject IServiceScopeFactory Scopes
+@inject TimeProvider Time
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="_fullName" Label="ФИО ученика" Placeholder="Иванов Пётр Сергеевич" Immediate AutoFocus
+                      MaxLength="200" />
+        <MudTextField @bind-Value="_phone" Label="Телефон ученика" Placeholder="необязательно" MaxLength="30" />
+
+        <MudText Typo="Typo.subtitle2" Class="mt-4">Родители</MudText>
+        @foreach (var parent in _parents)
+        {
+            <MudPaper Outlined Class="pa-3 mb-2">
+                <MudStack Row AlignItems="AlignItems.Start">
+                    <MudStack Class="flex-grow-1" Spacing="0">
+                        <MudTextField @bind-Value="parent.FullName" Label="ФИО родителя" MaxLength="200" Margin="Margin.Dense" />
+                        <MudTextField @bind-Value="parent.Phone" Label="Телефон родителя" MaxLength="30" Margin="Margin.Dense" />
+                        <MudCheckBox @bind-Value="parent.NotifyAll" Label="Все уведомления о ребёнке (а не только сводка)" Dense />
+                    </MudStack>
+                    <MudTooltip Text="Отвязать от ребёнка (сам родитель останется в базе)">
+                        <MudIconButton Icon="@Icons.Material.Outlined.LinkOff" OnClick="() => _parents.Remove(parent)" aria-label="Отвязать" />
+                    </MudTooltip>
+                </MudStack>
+            </MudPaper>
+        }
+        @if (_parents.Count < 2)
+        {
+            <MudButton StartIcon="@Icons.Material.Filled.Add" Size="Size.Small" OnClick="AddParent">Добавить родителя</MudButton>
+        }
+        <MudText Typo="Typo.caption" Class="d-block">У родителя нужен телефон — по нему он войдёт в MAX и будет получать уведомления.</MudText>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense Class="mt-2">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Отмена</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveAsync" Disabled="_saving">Сохранить</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+
+    [Parameter] public int ClassId { get; set; }
+    [Parameter] public int Grade { get; set; }
+    [Parameter] public int? StudentId { get; set; }
+
+    /// <summary>Редактируемая строка родителя (класс, а не record: поля меняются через @bind).</summary>
+    private sealed class ParentRow
+    {
+        public int? ParentId { get; init; }
+        public string FullName { get; set; } = "";
+        public string Phone { get; set; } = "";
+        public bool NotifyAll { get; set; }
+    }
+
+    private string _fullName = "";
+    private string? _phone;
+    private List<ParentRow> _parents = [];
+    private string? _error;
+    private bool _saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (StudentId is null)
+        {
+            return;
+        }
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var student = await db.People.SingleAsync(p => p.Id == StudentId);
+        _fullName = student.FullName;
+        _phone = student.Phone;
+        _parents = await db.ParentLinks.Where(l => l.StudentId == StudentId)
+            .Select(l => new ParentRow
+            {
+                ParentId = l.ParentId,
+                FullName = l.Parent.LastName + " " + l.Parent.FirstName + (l.Parent.MiddleName == null ? "" : " " + l.Parent.MiddleName),
+                Phone = l.Parent.Phone ?? "",
+                NotifyAll = l.NotifyAll,
+            })
+            .ToListAsync();
+    }
+
+    // По умолчанию «все уведомления» — у родителей младших (0–4 классы).
+    private void AddParent() => _parents.Add(new ParentRow { NotifyAll = Grade <= 4 });
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        try
+        {
+            var input = new StudentInput(_fullName, _phone,
+                _parents.Select(p => new ParentInput(p.ParentId, p.FullName, p.Phone, p.NotifyAll)).ToList());
+            var today = DateOnly.FromDateTime(SchoolTime.ToSchool(Time.GetUtcNow().UtcDateTime));
+
+            await using var scope = Scopes.CreateAsyncScope();
+            scope.ServiceProvider.GetRequiredService<EruditDbContext>().CurrentPersonId = (await AuthState).User.GetPersonId();
+            _error = await scope.ServiceProvider.GetRequiredService<StudentService>().SaveStudentAsync(ClassId, StudentId, input, today);
+            if (_error is null)
+            {
+                Dialog.Close(DialogResult.Ok(true));
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

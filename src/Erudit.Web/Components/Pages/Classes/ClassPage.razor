@@ -3,6 +3,8 @@
 @using Erudit.Domain.People
 @using Erudit.Domain.School
 @inject IDbContextFactory<EruditDbContext> DbFactory
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
 
 <PageTitle>@(_class is null || _denied ? "Класс" : $"Класс {_class.Name}")</PageTitle>
 
@@ -18,38 +20,71 @@ else
 {
     <MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-1">
         <MudText Typo="Typo.h5" Class="flex-grow-1">Класс @_class.Name · @_class.AcademicYear.Name</MudText>
+        <MudSwitch T="bool" Value="_showLeft" ValueChanged="ToggleLeftAsync" Label="Показывать выбывших" Color="Color.Primary" />
+        @* Excel — только если сейчас в классе нет учеников (выбывшие не считаются). *@
+        @if (!_rows.Any(r => r.Left is null))
+        {
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.UploadFile" OnClick="ImportAsync">
+                Загрузить список из Excel
+            </MudButton>
+        }
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="() => EditAsync(null)">
+            Добавить ученика
+        </MudButton>
     </MudStack>
-    <MudText Class="mb-4">
-        Классный руководитель: @(_class.ClassTeacher?.FullName ?? "не назначен")
-    </MudText>
+    <MudText Class="mb-4">Классный руководитель: @(_class.ClassTeacher?.FullName ?? "не назначен")</MudText>
 
-    <MudAlert Severity="Severity.Normal" Variant="Variant.Outlined" Dense Class="mb-4">
-        Загрузка списка из Excel, добавление и правка учеников появятся на шаге 5 этапа 3.
-    </MudAlert>
-
-    <MudTable Items="_students" Dense Hover>
+    <MudTable Items="_rows" Dense Hover>
         <HeaderContent>
             <MudTh>Ученик</MudTh>
             <MudTh>Телефон</MudTh>
             <MudTh>MAX</MudTh>
             <MudTh>Родители</MudTh>
+            <MudTh></MudTh>
         </HeaderContent>
         <RowTemplate>
-            <MudTd DataLabel="Ученик">@context.Student.FullName</MudTd>
+            <MudTd DataLabel="Ученик">
+                @context.Student.FullName
+                @if (context.Left is not null)
+                {
+                    <MudChip T="string" Size="Size.Small" Class="ml-2">@context.Left</MudChip>
+                }
+            </MudTd>
             <MudTd DataLabel="Телефон">@(context.Student.Phone ?? "—")</MudTd>
             <MudTd DataLabel="MAX">
-                @if (context.Student.MaxUserId is null)
-                {
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">не зарегистрирован</MudText>
-                }
-                else
+                @if (context.Student.MaxUserId is not null)
                 {
                     <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
                 }
             </MudTd>
-            <MudTd DataLabel="Родители">@string.Join(", ", context.Parents)</MudTd>
+            <MudTd DataLabel="Родители">
+                @foreach (var p in context.Parents)
+                {
+                    <div>
+                        @p.Name
+                        @if (p.Registered)
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" Style="vertical-align: middle" />
+                        }
+                    </div>
+                }
+            </MudTd>
+            <MudTd Style="text-align: right; white-space: nowrap">
+                @if (context.Left is null)
+                {
+                    <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Изменить"
+                                   OnClick="() => EditAsync(context.Student.Id)" />
+                    <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense AnchorOrigin="Origin.BottomRight"
+                             TransformOrigin="Origin.TopRight" aria-label="Ещё">
+                        <MudMenuItem Icon="@Icons.Material.Outlined.SwapHoriz" OnClick="() => MoveAsync(context, transfer: true)">Перевести в другой класс</MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Outlined.PersonOff" OnClick="() => MoveAsync(context, transfer: false)">Выбыл</MudMenuItem>
+                    </MudMenu>
+                }
+            </MudTd>
         </RowTemplate>
-        <NoRecordsContent>В классе пока нет учеников.</NoRecordsContent>
+        <NoRecordsContent>
+            В классе пока нет учеников. Загрузите список из Excel или добавьте учеников по одному.
+        </NoRecordsContent>
     </MudTable>
 }
 
@@ -57,17 +92,23 @@ else
     [Parameter] public int ClassId { get; set; }
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
 
-    private sealed record StudentRow(Person Student, List<string> Parents);
+    private sealed record ParentInfo(string Name, bool Registered);
+
+    /// <summary>Left — пусто, если ученик сейчас в классе; иначе «выбыл 20.12» или «переведён в 7б с 01.10».</summary>
+    private sealed record Row(Person Student, List<ParentInfo> Parents, string? Left);
 
     private SchoolClass? _class;
-    private List<StudentRow> _students = [];
+    private List<Row> _rows = [];
     private bool _denied;
+    private bool _showLeft;
+    private bool _canTransferAnywhere;
 
     // OnParametersSetAsync, а не OnInitializedAsync: при переходе с одного класса на другой
     // Blazor переиспользует ту же страницу и меняет только параметр ClassId.
     protected override async Task OnParametersSetAsync()
     {
         var user = (await AuthState).User;
+        _canTransferAnywhere = !user.IsInRole(AppRoles.ClassTeacher); // администратор и завуч
         await using var db = await DbFactory.CreateDbContextAsync();
         _class = await db.SchoolClasses
             .Include(c => c.AcademicYear)
@@ -75,26 +116,109 @@ else
             .SingleOrDefaultAsync(c => c.Id == ClassId);
 
         // Классный руководитель видит только свои классы; администратор и завуч — любые.
-        _denied = _class is null
-                  || (user.IsInRole(AppRoles.ClassTeacher) && _class.ClassTeacherId != user.GetPersonId());
-        if (_denied)
+        _denied = _class is null || (user.IsInRole(AppRoles.ClassTeacher) && _class.ClassTeacherId != user.GetPersonId());
+        if (!_denied)
         {
-            return;
+            await LoadAsync();
         }
+    }
 
-        var students = await db.ClassMemberships
-            .Where(m => m.SchoolClassId == ClassId && m.ToDate == null)
-            .Select(m => m.Student)
-            .OrderBy(s => s.LastName).ThenBy(s => s.FirstName)
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var memberships = await db.ClassMemberships
+            .Include(m => m.Student)
+            .Where(m => m.SchoolClassId == ClassId && (_showLeft || m.ToDate == null))
+            .OrderBy(m => m.Student.LastName).ThenBy(m => m.Student.FirstName)
             .ToListAsync();
-        var ids = students.Select(s => s.Id).ToList();
+        var ids = memberships.Select(m => m.StudentId).ToList();
+
         var parents = await db.ParentLinks
             .Where(l => ids.Contains(l.StudentId))
-            .Select(l => new { l.StudentId, Name = l.Parent.LastName + " " + l.Parent.FirstName })
+            .Select(l => new { l.StudentId, Name = l.Parent.LastName + " " + l.Parent.FirstName, Registered = l.Parent.MaxUserId != null })
+            .ToListAsync();
+        // Куда ушли переведённые: следующая запись состава этого ученика.
+        var nextClasses = await db.ClassMemberships
+            .Where(m => ids.Contains(m.StudentId) && m.SchoolClassId != ClassId)
+            .Select(m => new { m.StudentId, m.FromDate, Name = m.SchoolClass.Grade + m.SchoolClass.Letter })
             .ToListAsync();
 
-        _students = students
-            .Select(s => new StudentRow(s, parents.Where(p => p.StudentId == s.Id).Select(p => p.Name).ToList()))
-            .ToList();
+        _rows = memberships.Select(m =>
+        {
+            string? left = null;
+            if (m.ToDate is { } last)
+            {
+                var next = nextClasses.Where(n => n.StudentId == m.StudentId && n.FromDate > last).MinBy(n => n.FromDate);
+                left = next is null ? $"выбыл {last:dd.MM.yyyy}" : $"переведён в {next.Name} с {next.FromDate:dd.MM.yyyy}";
+            }
+            var p = parents.Where(x => x.StudentId == m.StudentId).Select(x => new ParentInfo(x.Name, x.Registered)).ToList();
+            return new Row(m.Student, p, left);
+        }).ToList();
+    }
+
+    private async Task ToggleLeftAsync(bool value)
+    {
+        _showLeft = value;
+        await LoadAsync();
+    }
+
+    private async Task EditAsync(int? studentId)
+    {
+        var dialog = await DialogService.ShowAsync<StudentDialog>(studentId is null ? "Новый ученик" : "Ученик",
+            new DialogParameters<StudentDialog>
+            {
+                { d => d.ClassId, ClassId },
+                { d => d.Grade, _class!.Grade },
+                { d => d.StudentId, studentId },
+            },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task ImportAsync()
+    {
+        var dialog = await DialogService.ShowAsync<StudentImportDialog>($"Загрузить список {_class!.Name} из Excel",
+            new DialogParameters<StudentImportDialog> { { d => d.ClassId, ClassId } },
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if (await dialog.Result is { Canceled: false, Data: int count })
+        {
+            Snackbar.Add($"Загружено учеников: {count}", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task MoveAsync(Row row, bool transfer)
+    {
+        List<(int, string)> targets = [];
+        if (transfer)
+        {
+            // Классный руководитель переводит только в классы той же параллели; администратор и завуч — в любой класс года.
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var classes = await db.SchoolClasses
+                .Where(c => c.AcademicYearId == _class!.AcademicYearId && c.Id != ClassId
+                    && (_canTransferAnywhere || c.Grade == _class.Grade))
+                .OrderBy(c => c.Grade).ThenBy(c => c.Letter)
+                .Select(c => new { c.Id, c.Grade, c.Letter })
+                .ToListAsync();
+            targets = classes.Select(c => (c.Id, $"{c.Grade}{c.Letter}")).ToList();
+        }
+
+        var dialog = await DialogService.ShowAsync<StudentMoveDialog>(transfer ? "Перевести в другой класс" : "Ученик выбыл",
+            new DialogParameters<StudentMoveDialog>
+            {
+                { d => d.StudentId, row.Student.Id },
+                { d => d.StudentName, row.Student.FullName },
+                { d => d.ClassId, ClassId },
+                { d => d.Transfer, transfer },
+                { d => d.TargetClasses, targets },
+            },
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            await LoadAsync();
+        }
     }
 }

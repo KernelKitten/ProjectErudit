@@ -69,6 +69,7 @@ public static class DependencyInjection
         services.AddScoped<BotUpdateHandler>();
         services.AddScoped<PersonRegistration>();
         services.AddScoped<TeacherService>();
+        services.AddScoped<StudentService>();
         services.AddSingleton<LoginRequestService>();
 
         var useLongPolling = configuration.GetValue<bool>($"{MaxOptions.SectionName}:{nameof(MaxOptions.UseLongPolling)}");

@@ -1,0 +1,77 @@
+@* Один диалог для двух действий: «Выбыл» (TargetClasses пустой) и «Перевести в другой класс». *@
+@using Erudit.Infrastructure.People
+@inject IServiceScopeFactory Scopes
+@inject TimeProvider Time
+
+<MudDialog>
+    <DialogContent>
+        <MudText Class="mb-2">@StudentName</MudText>
+        @if (Transfer)
+        {
+            @if (TargetClasses.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Dense>Нет подходящих классов для перевода.</MudAlert>
+            }
+            else
+            {
+                <MudSelect T="int?" @bind-Value="_toClassId" Label="В какой класс">
+                    @foreach (var (id, name) in TargetClasses)
+                    {
+                        <MudSelectItem T="int?" Value="id">@name</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+            <MudDatePicker Editable @bind-Date="_date" Label="С какого дня в новом классе" />
+        }
+        else
+        {
+            <MudDatePicker Editable @bind-Date="_date" Label="Последний день в классе" />
+            <MudText Typo="Typo.caption">Ученик пропадёт из списков, но его прошлые занятия останутся в отчётах.</MudText>
+        }
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense Class="mt-2">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Отмена</MudButton>
+        <MudButton Color="@(Transfer ? Color.Primary : Color.Error)" Variant="Variant.Filled" OnClick="SaveAsync"
+                   Disabled="_date is null || (Transfer && _toClassId is null)">
+            @(Transfer ? "Перевести" : "Выбыл")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+
+    [Parameter] public int StudentId { get; set; }
+    [Parameter] public string StudentName { get; set; } = "";
+    [Parameter] public int ClassId { get; set; }
+    [Parameter] public bool Transfer { get; set; }
+    [Parameter] public IReadOnlyList<(int Id, string Name)> TargetClasses { get; set; } = [];
+
+    private DateTime? _date;
+    private int? _toClassId;
+    private string? _error;
+
+    protected override void OnInitialized() =>
+        _date = SchoolTime.ToSchool(Time.GetUtcNow().UtcDateTime).Date;
+
+    private async Task SaveAsync()
+    {
+        var date = DateOnly.FromDateTime(_date!.Value);
+        await using var scope = Scopes.CreateAsyncScope();
+        scope.ServiceProvider.GetRequiredService<EruditDbContext>().CurrentPersonId = (await AuthState).User.GetPersonId();
+        var service = scope.ServiceProvider.GetRequiredService<StudentService>();
+
+        _error = Transfer
+            ? await service.TransferAsync(StudentId, ClassId, _toClassId!.Value, date)
+            : await service.LeaveAsync(StudentId, ClassId, date);
+        if (_error is null)
+        {
+            Dialog.Close(DialogResult.Ok(true));
+        }
+    }
+}

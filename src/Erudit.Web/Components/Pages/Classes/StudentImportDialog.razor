@@ -1,0 +1,165 @@
+@* Загрузка списка класса из Excel: файл → предпросмотр → «Загрузить». Только для пустого класса. *@
+@using Erudit.Infrastructure.People
+@inject IServiceScopeFactory Scopes
+@inject TimeProvider Time
+@inject ILogger<StudentImportDialog> Logger
+
+<MudDialog>
+    <DialogContent>
+        @if (_preview is null)
+        {
+            <MudText Class="mb-2"><b>Что должно быть в файле</b></MudText>
+            <ul class="mb-3" style="padding-left: 20px">
+                <li>Файл Excel (.xlsx). Лист и место таблицы — любые. Класс в файле указывать не нужно.</li>
+                <li><b>«ФИО ученика»</b> — полностью, одной строкой. Обязательно.</li>
+                <li><b>«Телефон ученика»</b> — если есть.</li>
+                <li><b>«Родитель 1»</b> и <b>«Телефон родителя 1»</b>, <b>«Родитель 2»</b> и <b>«Телефон родителя 2»</b>.
+                    Можно назвать колонки «Мама», «Телефон мамы», «Папа», «Телефон папы».</li>
+                <li>Родитель без телефона не загружается: без номера он не сможет войти.</li>
+                <li>Телефоны — в любом виде: <i>8 900 123-45-67</i>.</li>
+            </ul>
+
+            <MudFileUpload T="IBrowserFile" Accept=".xlsx" FilesChanged="ReadFileAsync" DragAndDrop>
+                <CustomContent Context="upload">
+                    <MudPaper Outlined Class="pa-6 d-flex flex-column align-center" Style="border-style: dashed">
+                        <MudIcon Icon="@Icons.Material.Outlined.UploadFile" Size="Size.Large" Class="mb-2" />
+                        <MudText>Перетащите файл сюда</MudText>
+                        <MudText Typo="Typo.body2" Class="mb-2">или</MudText>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="upload.OpenFilePickerAsync">Выбрать файл</MudButton>
+                    </MudPaper>
+                </CustomContent>
+            </MudFileUpload>
+            @if (_busy)
+            {
+                <MudProgressLinear Indeterminate Class="mt-2" />
+            }
+        }
+        else
+        {
+            <MudText Class="mb-2">
+                Лист «@_preview.SheetName», учеников: @_preview.Rows.Count.
+                @if (_preview.HasErrors)
+                {
+                    <b style="color: var(--mud-palette-error)">Есть ошибки — исправьте файл и загрузите снова.</b>
+                }
+            </MudText>
+            <MudSimpleTable Dense Style="max-height: 50vh; overflow-y: auto">
+                <thead><tr><th>Строка</th><th>Ученик</th><th>Родители</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var row in _preview.Rows)
+                    {
+                        <tr>
+                            <td>@row.RowNumber</td>
+                            <td>@(row.Name?.FullName ?? row.RawName)<br /><small>@row.Phone</small></td>
+                            <td>
+                                @foreach (var p in row.Parents)
+                                {
+                                    <div>@p.Name.FullName <small>@p.Phone</small></div>
+                                }
+                            </td>
+                            <td>
+                                @foreach (var e in row.Errors)
+                                {
+                                    <MudText Typo="Typo.body2" Color="Color.Error">✖ @e</MudText>
+                                }
+                                @foreach (var w in row.Warnings)
+                                {
+                                    <MudText Typo="Typo.body2" Color="Color.Warning">⚠ @w</MudText>
+                                }
+                                @if (row.Errors.Count == 0 && row.Warnings.Count == 0)
+                                {
+                                    <MudText Typo="Typo.body2" Color="Color.Success">✔</MudText>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-2">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        @if (_preview is not null)
+        {
+            <MudButton OnClick="() => { _preview = null; _error = null; }">Другой файл</MudButton>
+        }
+        <MudSpacer />
+        <MudButton OnClick="() => Dialog.Cancel()">Отмена</MudButton>
+        @if (_preview is not null)
+        {
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="ApplyAsync" Disabled="_preview.HasErrors || _busy">
+                Загрузить (@_preview.Rows.Count)
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+    [Parameter] public int ClassId { get; set; }
+
+    private StudentImportPreview? _preview;
+    private string? _error;
+    private bool _busy;
+
+    private async Task ReadFileAsync(IBrowserFile? file)
+    {
+        if (file is null)
+        {
+            return;
+        }
+        _busy = true;
+        _error = null;
+        try
+        {
+            if (!file.Name.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+            {
+                _error = "Нужен файл .xlsx. Если файл .xls или .csv — откройте его в Excel и сохраните как «Книга Excel (.xlsx)».";
+                return;
+            }
+            var buffer = new MemoryStream();
+            await file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024).CopyToAsync(buffer);
+            buffer.Position = 0;
+
+            await using var scope = Scopes.CreateAsyncScope();
+            _preview = await scope.ServiceProvider.GetRequiredService<StudentService>().PreviewAsync(ClassId, buffer);
+        }
+        catch (FormatException ex)
+        {
+            _error = ex.Message;
+            if (ex.InnerException is not null)
+            {
+                Logger.LogWarning(ex.InnerException, "Не удалось прочитать Excel-файл «{File}»", file.Name);
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ApplyAsync()
+    {
+        _busy = true;
+        try
+        {
+            await using var scope = Scopes.CreateAsyncScope();
+            scope.ServiceProvider.GetRequiredService<EruditDbContext>().CurrentPersonId = (await AuthState).User.GetPersonId();
+            var today = DateOnly.FromDateTime(SchoolTime.ToSchool(Time.GetUtcNow().UtcDateTime));
+            var count = await scope.ServiceProvider.GetRequiredService<StudentService>().ApplyAsync(ClassId, _preview!, today);
+            Dialog.Close(DialogResult.Ok(count));
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

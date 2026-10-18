@@ -81,11 +81,21 @@ public static class ExcelTableReader
             }
             // Заголовок совпадает с вариантом или начинается с него: «ФИО учителя» → «фио».
             // Именно «начинается», а не «содержит»: иначе «тел» нашлось бы в слове «учиТЕЛя».
-            var column = columns.FirstOrDefault(c => !map.ContainsKey(c.Key)
-                && c.Synonyms.Select(Normalize).Any(s => header == s || header.StartsWith(s)));
-            if (column is not null)
+            // Из подходящих колонок берём ту, чей вариант ДЛИННЕЕ (точнее): «Телефон мамы» подходит и под
+            // «телефон» (ученика), и под «телефонмамы» — выигрывает «телефонмамы».
+            var best = columns
+                .Where(c => !map.ContainsKey(c.Key))
+                .Select(c => (Column: c, Length: c.Synonyms.Select(Normalize)
+                    .Where(s => header == s || header.StartsWith(s))
+                    .Select(s => s.Length)
+                    .DefaultIfEmpty(0)
+                    .Max()))
+                .Where(x => x.Length > 0)
+                .OrderByDescending(x => x.Length)
+                .FirstOrDefault();
+            if (best.Column is not null)
             {
-                map[column.Key] = cell.Address.ColumnNumber;
+                map[best.Column.Key] = cell.Address.ColumnNumber;
             }
         }
         return map;
