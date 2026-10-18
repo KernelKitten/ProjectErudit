@@ -26,7 +26,7 @@
                             <tr>
                                 <td><b>@c.Name</b></td>
                                 <td>@(c.FromClasses.Count == 0 ? "новый" : string.Join(", ", c.FromClasses))</td>
-                                <td>@c.Students</td>
+                                <td>@StudentsIn(c)</td>
                                 <td>
                                     @if (c.ClassTeacher is null)
                                     {
@@ -41,6 +41,31 @@
                         }
                     </tbody>
                 </MudSimpleTable>
+                @if (_plan.SplitStudents.Count > 0)
+                {
+                    <MudText Typo="Typo.subtitle2" Class="mt-2">
+                        Ученики @string.Join(", ", _plan.SplitStudents.Select(s => s.FromClass).Distinct()) — распределите по 5-м классам
+                    </MudText>
+                    <MudText Typo="Typo.body2" Class="mb-1">Сейчас разложены поровну по алфавиту, поправьте при необходимости.</MudText>
+                    <MudSimpleTable Dense Style="max-height: 35vh; overflow-y: auto" Class="mb-2">
+                        <tbody>
+                            @foreach (var s in _plan.SplitStudents)
+                            {
+                                <tr>
+                                    <td>@s.Name</td>
+                                    <td>
+                                        <MudRadioGroup T="string" Value="_split[s.StudentId]" ValueChanged="v => _split[s.StudentId] = v">
+                                            @foreach (var letter in SchoolYearTransition.MiddleLetters)
+                                            {
+                                                <MudRadio T="string" Value="letter" Dense>5@(letter)</MudRadio>
+                                            }
+                                        </MudRadioGroup>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
                 <MudText Typo="Typo.body2">Выпускников (11 классы): <b>@_plan.Graduates</b> — их состав закроется 31 августа.</MudText>
                 <MudText Typo="Typo.body2">Все 9-е классы объединяются в один 10-й.</MudText>
                 <MudText Typo="Typo.body2">У 5-х классов (и у 10-го, если 9-х было несколько) руководителя назначьте на странице «Классы». Учеников новых 1-х классов загрузите из Excel.</MudText>
@@ -65,6 +90,7 @@
     [Parameter] public int FromYearId { get; set; }
 
     private TransitionPlan? _plan;
+    private readonly Dictionary<int, string> _split = [];
     private string? _error;
     private bool _busy;
 
@@ -72,7 +98,15 @@
     {
         await using var scope = Scopes.CreateAsyncScope();
         _plan = await scope.ServiceProvider.GetRequiredService<SchoolYearTransition>().PreviewAsync(FromYearId);
+        foreach (var s in _plan.SplitStudents)
+        {
+            _split[s.StudentId] = s.SuggestedLetter;
+        }
     }
+
+    // В 5а/5б учеников: свои (из 4а/4б) плюс распределённые из 4в.
+    private int StudentsIn(NewClass c) =>
+        c.Students + (c.Grade == 5 ? _split.Values.Count(l => l == c.Letter) : 0);
 
     private async Task ApplyAsync()
     {
@@ -89,7 +123,7 @@
         {
             await using var scope = Scopes.CreateAsyncScope();
             scope.ServiceProvider.GetRequiredService<EruditDbContext>().CurrentPersonId = (await AuthState).User.GetPersonId();
-            var done = await scope.ServiceProvider.GetRequiredService<SchoolYearTransition>().ApplyAsync(FromYearId);
+            var done = await scope.ServiceProvider.GetRequiredService<SchoolYearTransition>().ApplyAsync(FromYearId, _split);
             Dialog.Close(DialogResult.Ok(done.NextYearName));
         }
         catch (InvalidOperationException ex)

@@ -103,6 +103,47 @@ public class SchoolYearTransitionTests(TestDatabase database)
     }
 
     [DatabaseFact]
+    public async Task Перевод__четвёртый_в_делится_между_5а_и_5б()
+    {
+        var year = await database.CreateSandboxYearAsync(2049);
+        await using (var db = database.CreateContext())
+        {
+            var c4a = new SchoolClass { AcademicYearId = year.Id, Grade = 4, Letter = "а" };
+            var c4v = new SchoolClass { AcademicYearId = year.Id, Grade = 4, Letter = "в", ClassTeacher = Teacher("Вэшкина") };
+            db.SchoolClasses.AddRange(c4a, c4v);
+            foreach (var (cls, name) in new[] { (c4a, "Аншин"), (c4v, "Аист"), (c4v, "Бобр"), (c4v, "Волк") })
+            {
+                db.ClassMemberships.Add(new ClassMembership { Student = Student(name), SchoolClass = cls, FromDate = year.StartDate });
+            }
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = database.CreateContext())
+        {
+            var transition = new SchoolYearTransition(db);
+            var preview = await transition.PreviewAsync(year.Id);
+            Assert.Equal(["1а", "1в", "5а", "5б"], preview.NewClasses.Select(c => c.Name)); // 5в не создаётся
+            Assert.Equal("Вэшкина У.", preview.NewClasses.Single(c => c.Name == "1в").ClassTeacher);
+
+            // Поровну: в 5а уже один (из 4а) → Аист в 5б, Бобр в 5а, Волк в 5б.
+            Assert.Equal(["б", "а", "б"], preview.SplitStudents.Select(s => s.SuggestedLetter));
+
+            // Без распределения не переводим.
+            await Assert.ThrowsAsync<InvalidOperationException>(() => transition.ApplyAsync(year.Id));
+
+            var split = preview.SplitStudents.ToDictionary(s => s.StudentId, s => s.SuggestedLetter);
+            split[preview.SplitStudents.Single(s => s.Name.StartsWith("Волк")).StudentId] = "а"; // завуч поправил
+            await transition.ApplyAsync(year.Id, split);
+        }
+
+        await using var check = database.CreateContext();
+        var next = await check.AcademicYears.SingleAsync(y => y.Name == "2050/51");
+        var classes = await check.SchoolClasses.Where(c => c.AcademicYearId == next.Id).ToDictionaryAsync(c => c.Name());
+        int Count(string name) => check.ClassMemberships.Count(m => m.SchoolClassId == classes[name].Id && m.ToDate == null);
+        Assert.Equal((3, 1, 0), (Count("5а"), Count("5б"), Count("1в")));
+    }
+
+    [DatabaseFact]
     public async Task Перевод__единственный_девятый__руководитель_идёт_в_десятый()
     {
         var year = await database.CreateSandboxYearAsync(2047);

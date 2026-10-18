@@ -8,6 +8,8 @@ namespace Erudit.Infrastructure.School;
 /// Перевод всей школы на следующий учебный год (согласовано 2026-10-18):
 ///  - создаётся следующий учебный год (1 сентября — 31 августа), если его нет;
 ///  - класс N «буква» → класс N+1 той же буквы, ученики переходят: в старом классе до 31 августа, в новом — с 1 сентября;
+///  - в 5–9 классах только буквы «а» и «б»: 4-й класс с другой буквой (4в) делится между 5а и 5б —
+///    кого куда, решает завуч в окне перевода (по умолчанию поровну);
 ///  - все 9-е классы объединяются в один 10-й («10»); его руководитель — руководитель 9-го, если 9-й был один,
 ///    иначе назначают вручную;
 ///  - классный руководитель идёт с классом, КРОМЕ 4 → 5: у 5-х руководителя назначают вручную,
@@ -28,6 +30,11 @@ public sealed class SchoolYearTransition(EruditDbContext db)
     public static (int Grade, string Letter) TargetOf(int grade, string letter) =>
         grade == 9 ? (10, TenthLetter) : (grade + 1, letter);
 
+    /// <summary>Буквы классов 5–9 параллелей. 4-й класс с другой буквой делится между ними.</summary>
+    public static readonly IReadOnlyList<string> MiddleLetters = ["а", "б"];
+
+    private static bool IsSplit(int grade, string letter) => grade == 4 && !MiddleLetters.Contains(letter);
+
     public async Task<TransitionPlan> PreviewAsync(int fromYearId, CancellationToken ct = default)
     {
         var from = await db.AcademicYears.SingleAsync(y => y.Id == fromYearId, ct);
@@ -40,6 +47,7 @@ public sealed class SchoolYearTransition(EruditDbContext db)
             .OrderBy(c => c.Grade).ThenBy(c => c.Letter)
             .Select(c => new
             {
+                c.Id,
                 c.Grade,
                 c.Letter,
                 c.ClassTeacherId,
@@ -60,6 +68,19 @@ public sealed class SchoolYearTransition(EruditDbContext db)
             if (c.Grade == 11)
             {
                 graduates += c.Students;
+                continue;
+            }
+
+            if (IsSplit(c.Grade, c.Letter))
+            {
+                // 4в делится между 5а и 5б (ученики — ниже, в SplitStudents); руководитель — в новый 1в.
+                foreach (var l in MiddleLetters)
+                {
+                    Target(5, l).FromClasses.Add($"{c.Grade}{c.Letter} (часть)");
+                }
+                var first = Target(1, c.Letter);
+                first.ClassTeacherId = c.ClassTeacherId;
+                first.ClassTeacher = c.Teacher;
                 continue;
             }
 
@@ -98,6 +119,22 @@ public sealed class SchoolYearTransition(EruditDbContext db)
             tenth.ClassTeacher = ninth[0].Teacher;
         }
 
+        // Ученики делящихся 4-х классов: по алфавиту, каждый — в тот из 5а/5б, где сейчас меньше учеников.
+        var splitIds = classes.Where(c => IsSplit(c.Grade, c.Letter)).Select(c => c.Id).ToList();
+        var splitRows = await db.ClassMemberships
+            .Where(m => splitIds.Contains(m.SchoolClassId) && m.ToDate == null)
+            .OrderBy(m => m.Student.LastName).ThenBy(m => m.Student.FirstName)
+            .Select(m => new { m.StudentId, m.Student.LastName, m.Student.FirstName, m.SchoolClass.Grade, m.SchoolClass.Letter })
+            .ToListAsync(ct);
+        var counts = MiddleLetters.ToDictionary(l => l, l => targets.TryGetValue((5, l), out var t) ? t.Students : 0);
+        var split = new List<SplitStudent>();
+        foreach (var r in splitRows)
+        {
+            var suggested = MiddleLetters.MinBy(l => counts[l])!;
+            counts[suggested]++;
+            split.Add(new SplitStudent(r.StudentId, $"{r.LastName} {r.FirstName}", $"{r.Grade}{r.Letter}", suggested));
+        }
+
         string? blocked = null;
         if (classes.Count == 0)
         {
@@ -109,16 +146,30 @@ public sealed class SchoolYearTransition(EruditDbContext db)
         }
 
         return new TransitionPlan(from.Name, nextName, nextStart,
-            targets.Values.OrderBy(t => t.Grade).ThenBy(t => t.Letter).ToList(), graduates, blocked);
+            targets.Values.OrderBy(t => t.Grade).ThenBy(t => t.Letter).ToList(), split, graduates, blocked);
     }
 
-    /// <summary>Выполняет перевод одной транзакцией. Возвращает план (что сделано) или ошибку, если перевод заблокирован.</summary>
-    public async Task<TransitionPlan> ApplyAsync(int fromYearId, CancellationToken ct = default)
+    /// <summary>
+    /// Выполняет перевод одной транзакцией. <paramref name="split"/> — куда идёт каждый ученик делящегося 4-го класса
+    /// (id ученика → буква 5-го класса); нужен, только если такие ученики есть.
+    /// Возвращает план (что сделано) или ошибку, если перевод заблокирован или распределение неполное.
+    /// </summary>
+    public async Task<TransitionPlan> ApplyAsync(int fromYearId, IReadOnlyDictionary<int, string>? split = null,
+        CancellationToken ct = default)
     {
         var plan = await PreviewAsync(fromYearId, ct);
         if (plan.Blocked is not null)
         {
             throw new InvalidOperationException(plan.Blocked);
+        }
+        split ??= new Dictionary<int, string>();
+        var notSplit = plan.SplitStudents
+            .Where(s => !split.TryGetValue(s.StudentId, out var l) || !MiddleLetters.Contains(l))
+            .ToList();
+        if (notSplit.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "Не распределены по 5-м классам: " + string.Join(", ", notSplit.Select(s => s.Name)) + ". Откройте перевод заново.");
         }
 
         var from = await db.AcademicYears.SingleAsync(y => y.Id == fromYearId, ct);
@@ -154,10 +205,13 @@ public sealed class SchoolYearTransition(EruditDbContext db)
                 m.Student.IsActive = false; // выпускник
                 continue;
             }
+            var target = IsSplit(m.SchoolClass.Grade, m.SchoolClass.Letter)
+                ? (5, split[m.StudentId])
+                : TargetOf(m.SchoolClass.Grade, m.SchoolClass.Letter);
             db.ClassMemberships.Add(new ClassMembership
             {
                 StudentId = m.StudentId,
-                SchoolClass = newClasses[TargetOf(m.SchoolClass.Grade, m.SchoolClass.Letter)],
+                SchoolClass = newClasses[target],
                 FromDate = next.StartDate,
             });
         }
@@ -168,7 +222,10 @@ public sealed class SchoolYearTransition(EruditDbContext db)
 }
 
 public sealed record TransitionPlan(string FromYearName, string NextYearName, DateOnly NextStart,
-    IReadOnlyList<NewClass> NewClasses, int Graduates, string? Blocked);
+    IReadOnlyList<NewClass> NewClasses, IReadOnlyList<SplitStudent> SplitStudents, int Graduates, string? Blocked);
+
+/// <summary>Ученик делящегося 4-го класса (4в) и предложенная буква 5-го класса.</summary>
+public sealed record SplitStudent(int StudentId, string Name, string FromClass, string SuggestedLetter);
 
 public sealed class NewClass(int grade, string letter)
 {
@@ -176,6 +233,7 @@ public sealed class NewClass(int grade, string letter)
     public string Letter { get; } = letter;
     public string Name => $"{Grade}{Letter}";
     public List<string> FromClasses { get; } = [];
+    /// <summary>Учеников без учёта делящегося 4-го класса (их распределяют в окне перевода).</summary>
     public int Students { get; set; }
     public int? ClassTeacherId { get; set; }
     public string? ClassTeacher { get; set; }
