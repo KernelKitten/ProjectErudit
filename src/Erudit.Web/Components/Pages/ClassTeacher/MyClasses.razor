@@ -1,7 +1,7 @@
 @page "/class-teacher"
 @attribute [Authorize(Roles = AppRoles.ClassTeacher)]
-@using Erudit.Domain.School
 @inject IDbContextFactory<EruditDbContext> DbFactory
+@inject TimeProvider Time
 
 <PageTitle>Мои классы</PageTitle>
 
@@ -11,52 +11,46 @@
 {
     <MudProgressLinear Indeterminate />
 }
+else if (_classes.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">В текущем учебном году вы не ведёте ни одного класса.</MudAlert>
+}
 else
 {
-    <MudExpansionPanels MultiExpansion>
+    <MudGrid>
         @foreach (var c in _classes)
         {
-            <MudExpansionPanel Text="@($"{c.Class.Name} — {c.Students.Count} учеников")" Expanded="_classes.Count == 1">
-                <MudSimpleTable Dense>
-                    <tbody>
-                        @foreach (var s in c.Students)
-                        {
-                            <tr>
-                                <td>@s.FullName</td>
-                                <td>@(s.Phone ?? "нет телефона")</td>
-                                <td>@(s.MaxUserId is null ? "не зарегистрирован в MAX" : "MAX ✓")</td>
-                            </tr>
-                        }
-                    </tbody>
-                </MudSimpleTable>
-            </MudExpansionPanel>
+            <MudItem xs="12" sm="6" md="4">
+                <MudPaper Class="pa-4" Outlined>
+                    <MudText Typo="Typo.h6">Класс @c.Name</MudText>
+                    <MudText Typo="Typo.body2" Class="mb-3">Учеников: @c.Students</MudText>
+                    <MudButton Href="@($"classes/{c.Id}")" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small">
+                        Открыть
+                    </MudButton>
+                </MudPaper>
+            </MudItem>
         }
-    </MudExpansionPanels>
+    </MudGrid>
 }
 
 @code {
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
-    private List<(SchoolClass Class, List<Erudit.Domain.People.Person> Students)>? _classes;
+
+    private sealed record ClassRow(int Id, string Name, int Students);
+
+    private List<ClassRow>? _classes;
 
     protected override async Task OnInitializedAsync()
     {
         var personId = (await AuthState).User.GetPersonId();
+        var today = DateOnly.FromDateTime(SchoolTime.ToSchool(Time.GetUtcNow().UtcDateTime));
 
         await using var db = await DbFactory.CreateDbContextAsync();
-        var classes = await db.SchoolClasses
-            .Where(c => c.ClassTeacherId == personId)
+        _classes = await db.SchoolClasses
+            .Where(c => c.ClassTeacherId == personId && c.AcademicYear.StartDate <= today && c.AcademicYear.EndDate >= today)
             .OrderBy(c => c.Grade).ThenBy(c => c.Letter)
+            .Select(c => new ClassRow(c.Id, c.Grade + c.Letter,
+                db.ClassMemberships.Count(m => m.SchoolClassId == c.Id && m.ToDate == null)))
             .ToListAsync();
-
-        _classes = [];
-        foreach (var c in classes)
-        {
-            var students = await db.ClassMemberships
-                .Where(m => m.SchoolClassId == c.Id && m.ToDate == null)
-                .Select(m => m.Student)
-                .OrderBy(s => s.LastName).ThenBy(s => s.FirstName)
-                .ToListAsync();
-            _classes.Add((c, students));
-        }
     }
 }

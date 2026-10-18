@@ -1,0 +1,72 @@
+@* Быстрое создание сразу нескольких классов: «1а, 1б, 5а-в, 10, 11». *@
+@using Erudit.Domain.School
+@inject IDbContextFactory<EruditDbContext> DbFactory
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="_input" Label="Классы" Lines="3" Immediate AutoFocus
+                      Placeholder="1а, 1б, 2а, 5а-в, 10, 11"
+                      HelperText="Через запятую или пробел. «5а-в» — это 5а, 5б, 5в." />
+
+        @if (Parsed.Errors.Count > 0)
+        {
+            <MudAlert Severity="Severity.Error" Dense Class="mt-2">
+                @foreach (var error in Parsed.Errors)
+                {
+                    <div>@error</div>
+                }
+            </MudAlert>
+        }
+        @if (Parsed.Classes.Count > 0)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mt-3">Будут созданы (@New.Count):</MudText>
+            <div>
+                @foreach (var c in Parsed.Classes)
+                {
+                    var exists = _existing.Contains((c.Grade, c.Letter));
+                    <MudChip T="string" Size="Size.Small" Color="@(exists ? Color.Default : Color.Primary)"
+                             Variant="@(exists ? Variant.Outlined : Variant.Filled)">
+                        @($"{c.Grade}{c.Letter}")@(exists ? " — уже есть" : "")
+                    </MudChip>
+                }
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Отмена</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveAsync"
+                   Disabled="Parsed.Errors.Count > 0 || New.Count == 0">Создать</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+    [Parameter] public int AcademicYearId { get; set; }
+
+    private string? _input;
+    private HashSet<(int Grade, string Letter)> _existing = [];
+
+    // Разбираем при каждом изменении текста (Immediate) — человек сразу видит, что получится.
+    private ClassNameParseResult Parsed => ClassNameParser.Parse(_input);
+    private List<(int Grade, string Letter)> New => Parsed.Classes.Where(c => !_existing.Contains(c)).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var existing = await db.SchoolClasses.Where(c => c.AcademicYearId == AcademicYearId)
+            .Select(c => new { c.Grade, c.Letter }).ToListAsync();
+        _existing = existing.Select(c => (c.Grade, c.Letter)).ToHashSet();
+    }
+
+    private async Task SaveAsync()
+    {
+        await using var db = await DbFactory.CreateForAsync((await AuthState).User);
+        foreach (var (grade, letter) in New)
+        {
+            db.SchoolClasses.Add(new SchoolClass { AcademicYearId = AcademicYearId, Grade = grade, Letter = letter });
+        }
+        await db.SaveChangesAsync();
+        Dialog.Close(DialogResult.Ok(New.Count));
+    }
+}

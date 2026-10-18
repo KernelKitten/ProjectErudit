@@ -1,0 +1,86 @@
+@using Erudit.Domain.School
+@inject IDbContextFactory<EruditDbContext> DbFactory
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="_valid">
+            <MudStack Row>
+                <MudSelect T="int" @bind-Value="_grade" Label="Параллель" Style="max-width: 160px">
+                    @for (var g = 0; g <= 11; g++)
+                    {
+                        var grade = g;
+                        <MudSelectItem T="int" Value="grade">@(grade == 0 ? "0 (подгот.)" : grade.ToString())</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudTextField @bind-Value="_letter" Label="Буква" MaxLength="5" HelperText="У 10 и 11 может быть пустой" />
+            </MudStack>
+            @* Автодополнение: начинаете вводить фамилию — список сужается. *@
+            <MudAutocomplete T="TeacherOption" @bind-Value="_classTeacher" Label="Классный руководитель"
+                             SearchFunc="SearchTeachers" Clearable ResetValueOnEmptyText
+                             HelperText="Можно оставить пустым и назначить позже" />
+        </MudForm>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense Class="mt-2">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Отмена</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveAsync">Сохранить</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+
+    [Parameter] public int AcademicYearId { get; set; }
+    [Parameter] public int? ClassId { get; set; }
+
+    private MudForm? _form;
+    private bool _valid;
+    private string? _error;
+    private int _grade = 1;
+    private string? _letter;
+    private TeacherOption? _classTeacher;
+    private List<TeacherOption> _teachers = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _teachers = await TeacherOption.LoadAsync(db);
+        if (ClassId is not null)
+        {
+            var c = await db.SchoolClasses.SingleAsync(x => x.Id == ClassId);
+            (_grade, _letter) = (c.Grade, c.Letter);
+            _classTeacher = _teachers.FirstOrDefault(t => t.Id == c.ClassTeacherId);
+        }
+    }
+
+    private Task<IEnumerable<TeacherOption>> SearchTeachers(string? text, CancellationToken ct) =>
+        Task.FromResult(_teachers.Where(t => string.IsNullOrWhiteSpace(text)
+            || t.Name.Contains(text, StringComparison.CurrentCultureIgnoreCase)));
+
+    private async Task SaveAsync()
+    {
+        await _form!.ValidateAsync();
+        var letter = (_letter ?? "").Trim().ToLowerInvariant();
+
+        await using var db = await DbFactory.CreateForAsync((await AuthState).User);
+        if (await db.SchoolClasses.AnyAsync(c => c.AcademicYearId == AcademicYearId && c.Grade == _grade
+                && c.Letter == letter && c.Id != ClassId))
+        {
+            _error = $"Класс {_grade}{letter} в этом учебном году уже есть.";
+            return;
+        }
+
+        var schoolClass = ClassId is null
+            ? db.SchoolClasses.Add(new SchoolClass { AcademicYearId = AcademicYearId }).Entity
+            : await db.SchoolClasses.SingleAsync(c => c.Id == ClassId);
+        schoolClass.Grade = _grade;
+        schoolClass.Letter = letter;
+        schoolClass.ClassTeacherId = _classTeacher?.Id;
+        await db.SaveChangesAsync();
+        Dialog.Close(DialogResult.Ok(true));
+    }
+}

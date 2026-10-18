@@ -1,0 +1,100 @@
+@page "/classes/{ClassId:int}"
+@attribute [Authorize(Roles = AppRoles.DirectoryManagers + "," + AppRoles.ClassTeacher)]
+@using Erudit.Domain.People
+@using Erudit.Domain.School
+@inject IDbContextFactory<EruditDbContext> DbFactory
+
+<PageTitle>@(_class is null || _denied ? "Класс" : $"Класс {_class.Name}")</PageTitle>
+
+@if (_denied)
+{
+    <MudAlert Severity="Severity.Warning">Это не ваш класс.</MudAlert>
+}
+else if (_class is null)
+{
+    <MudProgressLinear Indeterminate />
+}
+else
+{
+    <MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-1">
+        <MudText Typo="Typo.h5" Class="flex-grow-1">Класс @_class.Name · @_class.AcademicYear.Name</MudText>
+    </MudStack>
+    <MudText Class="mb-4">
+        Классный руководитель: @(_class.ClassTeacher?.FullName ?? "не назначен")
+    </MudText>
+
+    <MudAlert Severity="Severity.Normal" Variant="Variant.Outlined" Dense Class="mb-4">
+        Загрузка списка из Excel, добавление и правка учеников появятся на шаге 5 этапа 3.
+    </MudAlert>
+
+    <MudTable Items="_students" Dense Hover>
+        <HeaderContent>
+            <MudTh>Ученик</MudTh>
+            <MudTh>Телефон</MudTh>
+            <MudTh>MAX</MudTh>
+            <MudTh>Родители</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Ученик">@context.Student.FullName</MudTd>
+            <MudTd DataLabel="Телефон">@(context.Student.Phone ?? "—")</MudTd>
+            <MudTd DataLabel="MAX">
+                @if (context.Student.MaxUserId is null)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">не зарегистрирован</MudText>
+                }
+                else
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                }
+            </MudTd>
+            <MudTd DataLabel="Родители">@string.Join(", ", context.Parents)</MudTd>
+        </RowTemplate>
+        <NoRecordsContent>В классе пока нет учеников.</NoRecordsContent>
+    </MudTable>
+}
+
+@code {
+    [Parameter] public int ClassId { get; set; }
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+
+    private sealed record StudentRow(Person Student, List<string> Parents);
+
+    private SchoolClass? _class;
+    private List<StudentRow> _students = [];
+    private bool _denied;
+
+    // OnParametersSetAsync, а не OnInitializedAsync: при переходе с одного класса на другой
+    // Blazor переиспользует ту же страницу и меняет только параметр ClassId.
+    protected override async Task OnParametersSetAsync()
+    {
+        var user = (await AuthState).User;
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _class = await db.SchoolClasses
+            .Include(c => c.AcademicYear)
+            .Include(c => c.ClassTeacher)
+            .SingleOrDefaultAsync(c => c.Id == ClassId);
+
+        // Классный руководитель видит только свои классы; администратор и завуч — любые.
+        _denied = _class is null
+                  || (user.IsInRole(AppRoles.ClassTeacher) && _class.ClassTeacherId != user.GetPersonId());
+        if (_denied)
+        {
+            return;
+        }
+
+        var students = await db.ClassMemberships
+            .Where(m => m.SchoolClassId == ClassId && m.ToDate == null)
+            .Select(m => m.Student)
+            .OrderBy(s => s.LastName).ThenBy(s => s.FirstName)
+            .ToListAsync();
+        var ids = students.Select(s => s.Id).ToList();
+        var parents = await db.ParentLinks
+            .Where(l => ids.Contains(l.StudentId))
+            .Select(l => new { l.StudentId, Name = l.Parent.LastName + " " + l.Parent.FirstName })
+            .ToListAsync();
+
+        _students = students
+            .Select(s => new StudentRow(s, parents.Where(p => p.StudentId == s.Id).Select(p => p.Name).ToList()))
+            .ToList();
+    }
+}

@@ -1,0 +1,144 @@
+@page "/classes"
+@attribute [Authorize(Roles = AppRoles.DirectoryManagers)]
+@using Erudit.Domain.School
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject TimeProvider Time
+
+<PageTitle>Классы</PageTitle>
+
+<MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h5" Class="flex-grow-1">Классы</MudText>
+    <MudSelect T="int?" Value="_yearId" ValueChanged="ChangeYearAsync" Label="Учебный год" Dense Style="max-width: 180px">
+        @foreach (var y in _years)
+        {
+            <MudSelectItem T="int?" Value="y.Id">@y.Name</MudSelectItem>
+        }
+    </MudSelect>
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.PlaylistAdd" OnClick="BulkAddAsync"
+               Disabled="_yearId is null">Создать несколько</MudButton>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="() => EditAsync(null)"
+               Disabled="_yearId is null">Добавить класс</MudButton>
+</MudStack>
+
+@if (_years.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">Сначала создайте учебный год в разделе «Справочники → Учебные годы».</MudAlert>
+}
+else
+{
+    <MudTable Items="_rows" Dense Hover Loading="_rows is null" OnRowClick="@((TableRowClickEventArgs<Row> e) => Open(e.Item!))"
+              RowStyle="cursor: pointer">
+        <HeaderContent>
+            <MudTh>Класс</MudTh>
+            <MudTh>Классный руководитель</MudTh>
+            <MudTh>Учеников</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Класс"><b>@context.Name</b></MudTd>
+            <MudTd DataLabel="Классный руководитель">@(context.ClassTeacher ?? "—")</MudTd>
+            <MudTd DataLabel="Учеников">@context.Students</MudTd>
+            <MudTd Style="text-align: right; white-space: nowrap">
+                @* StopPropagation: клик по кнопке не должен открывать страницу класса (клик по строке). *@
+                <span @onclick:stopPropagation>
+                    <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Изменить"
+                                   OnClick="() => EditAsync(context.Id)" />
+                    @if (context.CanDelete)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Удалить"
+                                       OnClick="() => DeleteAsync(context)" />
+                    }
+                </span>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>В этом учебном году классов нет. Нажмите «Создать несколько».</NoRecordsContent>
+    </MudTable>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
+    private sealed record Row(int Id, int Grade, string Letter, string? ClassTeacher, int Students, bool CanDelete)
+    {
+        public string Name => $"{Grade}{Letter}";
+    }
+
+    private List<AcademicYear> _years = [];
+    private int? _yearId;
+    private List<Row>? _rows;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _years = await db.AcademicYears.OrderByDescending(y => y.StartDate).ToListAsync();
+        var today = DateOnly.FromDateTime(SchoolTime.ToSchool(Time.GetUtcNow().UtcDateTime));
+        _yearId = (_years.FirstOrDefault(y => y.Contains(today)) ?? _years.FirstOrDefault())?.Id;
+        await LoadAsync();
+    }
+
+    private async Task ChangeYearAsync(int? yearId)
+    {
+        _yearId = yearId;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_yearId is null)
+        {
+            _rows = [];
+            return;
+        }
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _rows = await db.SchoolClasses
+            .Where(c => c.AcademicYearId == _yearId)
+            .OrderBy(c => c.Grade).ThenBy(c => c.Letter)
+            .Select(c => new Row(c.Id, c.Grade, c.Letter,
+                c.ClassTeacher == null ? null : c.ClassTeacher.LastName + " " + c.ClassTeacher.FirstName.Substring(0, 1) + ".",
+                db.ClassMemberships.Count(m => m.SchoolClassId == c.Id && m.ToDate == null),
+                // удалить можно только класс без истории: в нём никогда не было учеников
+                !db.ClassMemberships.Any(m => m.SchoolClassId == c.Id)))
+            .ToListAsync();
+    }
+
+    private void Open(Row row) => Navigation.NavigateTo($"classes/{row.Id}");
+
+    private async Task EditAsync(int? id)
+    {
+        var dialog = await DialogService.ShowAsync<ClassDialog>(id is null ? "Новый класс" : "Класс",
+            new DialogParameters<ClassDialog> { { d => d.AcademicYearId, _yearId!.Value }, { d => d.ClassId, id } },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task BulkAddAsync()
+    {
+        var dialog = await DialogService.ShowAsync<ClassesBulkDialog>("Создать несколько классов",
+            new DialogParameters<ClassesBulkDialog> { { d => d.AcademicYearId, _yearId!.Value } },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false, Data: int created })
+        {
+            Snackbar.Add($"Создано классов: {created}", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task DeleteAsync(Row row)
+    {
+        if (await DialogService.ShowMessageBoxAsync("Удалить класс?", $"Класс {row.Name} будет удалён.",
+                yesText: "Удалить", cancelText: "Отмена") != true)
+        {
+            return;
+        }
+        await using var db = await DbFactory.CreateForAsync((await AuthState).User);
+        db.SchoolClasses.Remove(await db.SchoolClasses.SingleAsync(c => c.Id == row.Id));
+        await db.SaveChangesAsync();
+        await LoadAsync();
+    }
+}
