@@ -8,6 +8,8 @@ namespace Erudit.Infrastructure.School;
 /// Перевод всей школы на следующий учебный год (согласовано 2026-10-18):
 ///  - создаётся следующий учебный год (1 сентября — 31 августа), если его нет;
 ///  - класс N «буква» → класс N+1 той же буквы, ученики переходят: в старом классе до 31 августа, в новом — с 1 сентября;
+///  - все 9-е классы объединяются в один 10-й («10»); его руководитель — руководитель 9-го, если 9-й был один,
+///    иначе назначают вручную;
 ///  - классный руководитель идёт с классом, КРОМЕ 4 → 5: у 5-х руководителя назначают вручную,
 ///    а учитель бывшего 4-го класса получает новый пустой 1-й класс той же буквы (учеников туда загрузят);
 ///  - 11-е классы — выпускники: состав закрывается, ученики выключаются (остаются в базе для отчётов);
@@ -16,6 +18,16 @@ namespace Erudit.Infrastructure.School;
 /// </summary>
 public sealed class SchoolYearTransition(EruditDbContext db)
 {
+    /// <summary>Буква объединённого 10-го класса: пустая — класс называется просто «10».</summary>
+    public const string TenthLetter = "";
+
+    /// <summary>
+    /// В какой класс переходит класс «параллель + буква». Обычно — на параллель старше с той же буквой,
+    /// но все 9-е (9а, 9б...) объединяются в один 10-й класс.
+    /// </summary>
+    public static (int Grade, string Letter) TargetOf(int grade, string letter) =>
+        grade == 9 ? (10, TenthLetter) : (grade + 1, letter);
+
     public async Task<TransitionPlan> PreviewAsync(int fromYearId, CancellationToken ct = default)
     {
         var from = await db.AcademicYears.SingleAsync(y => y.Id == fromYearId, ct);
@@ -25,6 +37,7 @@ public sealed class SchoolYearTransition(EruditDbContext db)
 
         var classes = await db.SchoolClasses
             .Where(c => c.AcademicYearId == fromYearId)
+            .OrderBy(c => c.Grade).ThenBy(c => c.Letter)
             .Select(c => new
             {
                 c.Grade,
@@ -50,9 +63,16 @@ public sealed class SchoolYearTransition(EruditDbContext db)
                 continue;
             }
 
-            var target = Target(c.Grade + 1, c.Letter);
+            var (grade, letter) = TargetOf(c.Grade, c.Letter);
+            var target = Target(grade, letter);
             target.FromClasses.Add($"{c.Grade}{c.Letter}");
             target.Students += c.Students;
+            if (c.Grade == 9)
+            {
+                // Все 9-е сливаются в один 10-й. Руководитель — бывший руководитель 9-го, только если 9-й был один;
+                // если 9-х несколько — назначают вручную (ниже).
+                continue;
+            }
             if (c.Grade == 4)
             {
                 // Учитель 4-го класса начинает новый 1-й класс той же буквы.
@@ -68,6 +88,14 @@ public sealed class SchoolYearTransition(EruditDbContext db)
                 target.ClassTeacherId = c.ClassTeacherId;
                 target.ClassTeacher = c.Teacher;
             }
+        }
+
+        var ninth = classes.Where(c => c.Grade == 9).ToList();
+        if (ninth.Count == 1)
+        {
+            var tenth = Target(10, TenthLetter);
+            tenth.ClassTeacherId = ninth[0].ClassTeacherId;
+            tenth.ClassTeacher = ninth[0].Teacher;
         }
 
         string? blocked = null;
@@ -129,7 +157,7 @@ public sealed class SchoolYearTransition(EruditDbContext db)
             db.ClassMemberships.Add(new ClassMembership
             {
                 StudentId = m.StudentId,
-                SchoolClass = newClasses[(m.SchoolClass.Grade + 1, m.SchoolClass.Letter)],
+                SchoolClass = newClasses[TargetOf(m.SchoolClass.Grade, m.SchoolClass.Letter)],
                 FromDate = next.StartDate,
             });
         }

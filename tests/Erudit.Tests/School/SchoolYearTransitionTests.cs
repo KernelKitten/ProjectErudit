@@ -68,6 +68,56 @@ public class SchoolYearTransitionTests(TestDatabase database)
     }
 
     [DatabaseFact]
+    public async Task Перевод__все_девятые_объединяются_в_один_десятый()
+    {
+        var year = await database.CreateSandboxYearAsync(2042);
+        await using (var db = database.CreateContext())
+        {
+            var c9a = new SchoolClass { AcademicYearId = year.Id, Grade = 9, Letter = "а", ClassTeacher = Teacher("Девяткина") };
+            var c9b = new SchoolClass { AcademicYearId = year.Id, Grade = 9, Letter = "б", ClassTeacher = Teacher("Девяткин") };
+            db.SchoolClasses.AddRange(c9a, c9b);
+            foreach (var (cls, name) in new[] { (c9a, "Девятый1"), (c9a, "Девятый2"), (c9b, "Девятый3") })
+            {
+                db.ClassMemberships.Add(new ClassMembership { Student = Student(name), SchoolClass = cls, FromDate = year.StartDate });
+            }
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = database.CreateContext())
+        {
+            var transition = new SchoolYearTransition(db);
+            var preview = await transition.PreviewAsync(year.Id);
+            var tenth = Assert.Single(preview.NewClasses);
+            Assert.Equal("10", tenth.Name);
+            Assert.Equal(["9а", "9б"], tenth.FromClasses);
+            Assert.Equal(3, tenth.Students);
+            Assert.Null(tenth.ClassTeacherId); // 9-х было два — руководителя назначают вручную
+            await transition.ApplyAsync(year.Id);
+        }
+
+        await using var check = database.CreateContext();
+        var next = await check.AcademicYears.SingleAsync(y => y.Name == "2043/44");
+        var cls10 = await check.SchoolClasses.SingleAsync(c => c.AcademicYearId == next.Id);
+        Assert.Equal((10, ""), (cls10.Grade, cls10.Letter));
+        Assert.Equal(3, await check.ClassMemberships.CountAsync(m => m.SchoolClassId == cls10.Id && m.ToDate == null));
+    }
+
+    [DatabaseFact]
+    public async Task Перевод__единственный_девятый__руководитель_идёт_в_десятый()
+    {
+        var year = await database.CreateSandboxYearAsync(2047);
+        await using (var db = database.CreateContext())
+        {
+            db.SchoolClasses.Add(new SchoolClass { AcademicYearId = year.Id, Grade = 9, Letter = "в", ClassTeacher = Teacher("Одинокий") });
+            await db.SaveChangesAsync();
+        }
+
+        await using var context = database.CreateContext();
+        var tenth = Assert.Single((await new SchoolYearTransition(context).PreviewAsync(year.Id)).NewClasses);
+        Assert.Equal(("10", "Одинокий У."), (tenth.Name, tenth.ClassTeacher));
+    }
+
+    [DatabaseFact]
     public async Task Напоминание__только_27_08_05_09_и_пока_перевод_не_сделан()
     {
         await using (var db = database.CreateContext())
