@@ -39,6 +39,11 @@ public static class DevDataSeeder
         var year = new AcademicYear { Name = "2026/27", StartDate = YearStart, EndDate = YearEnd };
         db.AcademicYears.Add(year);
 
+        db.Quarters.AddRange(
+            new Quarter { AcademicYear = year, Number = 1, StartDate = new(2026, 9, 1), EndDate = new(2026, 10, 25) },
+            new Quarter { AcademicYear = year, Number = 2, StartDate = new(2026, 11, 4), EndDate = new(2026, 12, 28) },
+            new Quarter { AcademicYear = year, Number = 3, StartDate = new(2027, 1, 11), EndDate = new(2027, 3, 21) },
+            new Quarter { AcademicYear = year, Number = 4, StartDate = new(2027, 4, 1), EndDate = new(2027, 5, 31) });
         db.LessonPeriods.AddRange(LessonPeriods());
         var subjects = Subjects().ToDictionary(s => s.ShortName!);
         db.Subjects.AddRange(subjects.Values);

@@ -73,6 +73,7 @@ public static class DependencyInjection
         services.AddScoped<StudentService>();
         services.AddScoped<DataCheckService>();
         services.AddScoped<SchoolYearTransition>();
+        services.AddScoped<Lessons.LessonService>();
         services.AddScoped<SchoolYearReminderJob>();
         services.AddOptions<SiteOptions>().Bind(configuration.GetSection(SiteOptions.SectionName));
         services.AddSingleton<LoginRequestService>();

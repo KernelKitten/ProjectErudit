@@ -13,6 +13,20 @@ public class AcademicYearConfiguration : IEntityTypeConfiguration<AcademicYear>
     }
 }
 
+public class QuarterConfiguration : IEntityTypeConfiguration<Quarter>
+{
+    public void Configure(EntityTypeBuilder<Quarter> b)
+    {
+        b.HasIndex(q => new { q.AcademicYearId, q.Number }).IsUnique();
+        b.Ignore(q => q.Name);
+        b.ToTable(t =>
+        {
+            t.HasCheckConstraint("ck_quarters_number", "number BETWEEN 1 AND 4");
+            t.HasCheckConstraint("ck_quarters_dates", "end_date >= start_date");
+        });
+    }
+}
+
 public class SchoolClassConfiguration : IEntityTypeConfiguration<SchoolClass>
 {
     public void Configure(EntityTypeBuilder<SchoolClass> b)

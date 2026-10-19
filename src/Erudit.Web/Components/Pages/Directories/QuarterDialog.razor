@@ -1,0 +1,88 @@
+@using Erudit.Domain.School
+@inject IDbContextFactory<EruditDbContext> DbFactory
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="_valid">
+            <MudSelect T="int" @bind-Value="_number" Label="Четверть">
+                @for (var n = 1; n <= 4; n++)
+                {
+                    var number = n;
+                    <MudSelectItem T="int" Value="number">@number-я четверть</MudSelectItem>
+                }
+            </MudSelect>
+            <MudStack Row>
+                <MudDatePicker Editable @bind-Date="_start" Label="С" Required RequiredError="Укажите начало" />
+                <MudDatePicker Editable @bind-Date="_end" Label="По (включительно)" Required RequiredError="Укажите конец" />
+            </MudStack>
+            <MudText Typo="Typo.caption">Каникулы между четвертями в четверть не входят.</MudText>
+        </MudForm>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense Class="mt-2">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Отмена</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveAsync">Сохранить</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+    [Parameter] public int? QuarterId { get; set; }
+    [Parameter] public int YearId { get; set; }
+
+    private MudForm? _form;
+    private bool _valid;
+    private string? _error;
+    private int _number = 1;
+    private DateTime? _start;
+    private DateTime? _end;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        if (QuarterId is not null)
+        {
+            var q = await db.Quarters.SingleAsync(x => x.Id == QuarterId);
+            _number = q.Number;
+            _start = q.StartDate.ToDateTime(TimeOnly.MinValue);
+            _end = q.EndDate.ToDateTime(TimeOnly.MinValue);
+            return;
+        }
+        // Новая четверть: предлагаем следующий свободный номер.
+        var used = await db.Quarters.Where(q => q.AcademicYearId == YearId).Select(q => q.Number).ToListAsync();
+        _number = Enumerable.Range(1, 4).FirstOrDefault(n => !used.Contains(n), 1);
+    }
+
+    private async Task SaveAsync()
+    {
+        await _form!.ValidateAsync();
+        if (!_valid)
+        {
+            return;
+        }
+
+        await using var db = await DbFactory.CreateForAsync((await AuthState).User);
+        var year = await db.AcademicYears.SingleAsync(y => y.Id == YearId);
+        var others = await db.Quarters.Where(q => q.AcademicYearId == YearId && q.Id != QuarterId).ToListAsync();
+        var start = DateOnly.FromDateTime(_start!.Value);
+        var end = DateOnly.FromDateTime(_end!.Value);
+        _error = QuarterRules.Validate(_number, start, end, year, others);
+        if (_error is not null)
+        {
+            return;
+        }
+
+        var q = QuarterId is null
+            ? db.Quarters.Add(new Quarter { AcademicYearId = YearId }).Entity
+            : await db.Quarters.SingleAsync(x => x.Id == QuarterId);
+        q.Number = _number;
+        q.StartDate = start;
+        q.EndDate = end;
+        await db.SaveChangesAsync();
+        Dialog.Close(DialogResult.Ok(true));
+    }
+}

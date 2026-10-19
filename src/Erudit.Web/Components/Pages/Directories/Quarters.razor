@@ -1,0 +1,116 @@
+@page "/directories/quarters"
+@attribute [Authorize(Roles = AppRoles.DirectoryManagers)]
+@using Erudit.Domain.School
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject IDialogService DialogService
+@inject TimeProvider Time
+
+<PageTitle>Четверти</PageTitle>
+
+<MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h5" Class="flex-grow-1">Четверти</MudText>
+    @if (_years.Count > 0)
+    {
+        <MudSelect T="int" Value="_yearId" ValueChanged="ChangeYearAsync" Label="Учебный год" Dense Style="max-width: 180px">
+            @foreach (var y in _years)
+            {
+                <MudSelectItem T="int" Value="y.Id">@y.Name</MudSelectItem>
+            }
+        </MudSelect>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                   Disabled="_quarters?.Count >= 4" OnClick="() => EditAsync(null)">
+            Добавить
+        </MudButton>
+    }
+</MudStack>
+
+@if (_years.Count == 0 && _quarters is not null)
+{
+    <MudAlert Severity="Severity.Info">Сначала добавьте учебный год на странице «Учебные годы».</MudAlert>
+}
+else
+{
+    <MudTable Items="_quarters" Dense Hover Loading="_quarters is null">
+        <HeaderContent>
+            <MudTh>Четверть</MudTh>
+            <MudTh>Даты</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Четверть">
+                @context.Name
+                @if (context.Contains(_today))
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Class="ml-2">текущая</MudChip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Даты">@context.StartDate.ToString("dd.MM.yyyy") — @context.EndDate.ToString("dd.MM.yyyy")</MudTd>
+            <MudTd Style="text-align: right; white-space: nowrap">
+                <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Изменить"
+                               OnClick="() => EditAsync(context.Id)" />
+                <MudIconButton Icon="@Icons.Material.Outlined.Delete" Size="Size.Small" aria-label="Удалить"
+                               OnClick="() => DeleteAsync(context)" />
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>Четвертей в этом учебном году пока нет. Нажмите «Добавить».</NoRecordsContent>
+    </MudTable>
+    <MudText Typo="Typo.caption" Class="d-block mt-2">
+        Четверти нужны для кнопки «до конца четверти» при создании регулярных занятий и для отчётов за четверть.
+    </MudText>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+    private List<AcademicYear> _years = [];
+    private List<Quarter>? _quarters;
+    private int _yearId;
+    private DateOnly _today;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _today = DateOnly.FromDateTime(SchoolTime.ToSchool(Time.GetUtcNow().UtcDateTime));
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _years = await db.AcademicYears.OrderByDescending(y => y.StartDate).ToListAsync();
+        // По умолчанию — текущий учебный год, если его нет — самый поздний.
+        _yearId = (_years.FirstOrDefault(y => y.Contains(_today)) ?? _years.FirstOrDefault())?.Id ?? 0;
+        await LoadAsync();
+    }
+
+    private async Task ChangeYearAsync(int yearId)
+    {
+        _yearId = yearId;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _quarters = await db.Quarters.Where(q => q.AcademicYearId == _yearId).OrderBy(q => q.Number).ToListAsync();
+    }
+
+    private async Task EditAsync(int? id)
+    {
+        var dialog = await DialogService.ShowAsync<QuarterDialog>(id is null ? "Новая четверть" : "Четверть",
+            new DialogParameters<QuarterDialog> { { d => d.QuarterId, id }, { d => d.YearId, _yearId } },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            await LoadAsync();
+        }
+    }
+
+    /// <summary>Четверть можно удалить по-настоящему: занятия на неё не ссылаются. Удаление попадёт в журнал.</summary>
+    private async Task DeleteAsync(Quarter quarter)
+    {
+        var confirmed = await DialogService.ShowMessageBoxAsync("Удалить четверть?",
+            $"{quarter.Name} ({quarter.StartDate:dd.MM} — {quarter.EndDate:dd.MM})", yesText: "Удалить", cancelText: "Отмена");
+        if (confirmed != true)
+        {
+            return;
+        }
+        await using var db = await DbFactory.CreateForAsync((await AuthState).User);
+        db.Quarters.Remove(await db.Quarters.SingleAsync(q => q.Id == quarter.Id));
+        await db.SaveChangesAsync();
+        await LoadAsync();
+    }
+}

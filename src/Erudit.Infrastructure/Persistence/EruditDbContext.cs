@@ -21,6 +21,7 @@ public class EruditDbContext(DbContextOptions<EruditDbContext> options) : DbCont
     public DbSet<LoginRequest> LoginRequests => Set<LoginRequest>();
 
     public DbSet<AcademicYear> AcademicYears => Set<AcademicYear>();
+    public DbSet<Quarter> Quarters => Set<Quarter>();
     public DbSet<SchoolClass> SchoolClasses => Set<SchoolClass>();
     public DbSet<ClassMembership> ClassMemberships => Set<ClassMembership>();
     public DbSet<Subject> Subjects => Set<Subject>();

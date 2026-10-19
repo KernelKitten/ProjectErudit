@@ -700,6 +700,46 @@ namespace Erudit.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Erudit.Domain.School.Quarter", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AcademicYearId")
+                        .HasColumnType("integer")
+                        .HasColumnName("academic_year_id");
+
+                    b.Property<DateOnly>("EndDate")
+                        .HasColumnType("date")
+                        .HasColumnName("end_date");
+
+                    b.Property<int>("Number")
+                        .HasColumnType("integer")
+                        .HasColumnName("number");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date")
+                        .HasColumnName("start_date");
+
+                    b.HasKey("Id")
+                        .HasName("pk_quarters");
+
+                    b.HasIndex("AcademicYearId", "Number")
+                        .IsUnique()
+                        .HasDatabaseName("ix_quarters_academic_year_id_number");
+
+                    b.ToTable("quarters", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_quarters_dates", "end_date >= start_date");
+
+                            t.HasCheckConstraint("ck_quarters_number", "number BETWEEN 1 AND 4");
+                        });
+                });
+
             modelBuilder.Entity("Erudit.Domain.School.Room", b =>
                 {
                     b.Property<int>("Id")
@@ -995,6 +1035,18 @@ namespace Erudit.Infrastructure.Persistence.Migrations
                     b.Navigation("SchoolClass");
 
                     b.Navigation("Student");
+                });
+
+            modelBuilder.Entity("Erudit.Domain.School.Quarter", b =>
+                {
+                    b.HasOne("Erudit.Domain.School.AcademicYear", "AcademicYear")
+                        .WithMany()
+                        .HasForeignKey("AcademicYearId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_quarters_academic_years_academic_year_id");
+
+                    b.Navigation("AcademicYear");
                 });
 
             modelBuilder.Entity("Erudit.Domain.School.SchoolClass", b =>
