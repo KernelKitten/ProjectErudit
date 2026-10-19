@@ -2,7 +2,7 @@
    Сам ничего не загружает: дни приходят готовыми через параметр Days. *@
 
 <div class="erudit-month @(Compact ? "erudit-compact" : null)">
-    @if (Compact)
+    @if (ShowTitle)
     {
         <div class="erudit-month-title">@Month.ToString("MMMM")</div>
     }
@@ -40,6 +40,9 @@
 
     /// <summary>Компактный вид — для нескольких месяцев на экране.</summary>
     [Parameter] public bool Compact { get; set; }
+
+    /// <summary>Подпись месяца над сеткой — когда на экране несколько месяцев.</summary>
+    [Parameter] public bool ShowTitle { get; set; }
 
     [Parameter] public EventCallback<CalendarCell> OnDayClick { get; set; }
 

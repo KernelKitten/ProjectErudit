@@ -21,6 +21,13 @@
         <MudToggleItem Value="CalendarView.HalfYear" Text="Полгода" />
         <MudToggleItem Value="CalendarView.Year" Text="Год" />
     </MudToggleGroup>
+    @if (_view != CalendarView.Month)
+    {
+        <MudToggleGroup T="bool" Value="_academic" ValueChanged="ChangeYearKindAsync" Size="Size.Small" Outlined Delimiters>
+            <MudToggleItem Value="true" Text="Учебный год" />
+            <MudToggleItem Value="false" Text="Календарный год" />
+        </MudToggleGroup>
+    }
     <MudSpacer />
     @if (_canEdit)
     {
@@ -49,11 +56,11 @@
 }
 else
 {
-    @* Несколько месяцев: сетка сама раскладывает их по 2–4 в ряд в зависимости от ширины экрана. *@
-    <div class="erudit-months">
+    @* Квартал — 3 крупных месяца в ряд; полгода — 2 ряда по 3; год — 3 ряда по 4 (на телефоне — меньше в ряд). *@
+    <div class="erudit-months erudit-months-@MonthCount">
         @foreach (var month in Months)
         {
-            <MonthGrid Month="month" Days="_days" Compact OnDayClick="EditDayAsync" />
+            <MonthGrid Month="month" Days="_days" Compact="_view != CalendarView.Quarter" ShowTitle OnDayClick="EditDayAsync" />
         }
     </div>
 }
@@ -78,6 +85,7 @@ else
     private enum CalendarView { Month = 1, Quarter = 3, HalfYear = 6, Year = 12 }
 
     private CalendarView _view = CalendarView.Month;
+    private bool _academic = true; // периоды от 1 сентября (учебный год) или от 1 января (календарный)
     private DateOnly _today;
     private DateOnly _start; // первое число первого показанного месяца
     private Dictionary<DateOnly, CalendarCell> _days = [];
@@ -88,12 +96,21 @@ else
 
     private IEnumerable<DateOnly> Months => Enumerable.Range(0, MonthCount).Select(i => _start.AddMonths(i));
 
-    private string Title => _view switch
+    private string Title
     {
-        CalendarView.Month => _start.ToString("MMMM yyyy"),
-        CalendarView.Year => $"{_start.Year} год",
-        _ => $"{_start:MMMM} — {_start.AddMonths(MonthCount - 1):MMMM yyyy}",
-    };
+        get
+        {
+            var end = _start.AddMonths(MonthCount - 1);
+            return _view switch
+            {
+                CalendarView.Month => _start.ToString("MMMM yyyy"),
+                CalendarView.Year when _academic => $"{_start.Year}/{end.Year % 100:D2} учебный год",
+                CalendarView.Year => $"{_start.Year} год",
+                _ when _start.Year != end.Year => $"{_start:MMMM yyyy} — {end:MMMM yyyy}",
+                _ => $"{_start:MMMM} — {end:MMMM yyyy}",
+            };
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -105,18 +122,28 @@ else
     }
 
     /// <summary>
-    /// Начало периода, в который попадает дата: квартал — январь/апрель/июль/октябрь,
-    /// полгода — январь/июль, год — январь, месяц — сам месяц.
+    /// Начало периода, в который попадает дата. Периоды отсчитываются от начала года:
+    /// календарного (1 января: кварталы январь/апрель/июль/октябрь) или учебного
+    /// (1 сентября: кварталы сентябрь/декабрь/март/июнь, полугодия сентябрь/март). Месяц — сам месяц.
     /// </summary>
     private DateOnly AlignStart(DateOnly date)
     {
-        var monthIndex = (date.Month - 1) / MonthCount * MonthCount; // 0, 3, 6, 9 для квартала
-        return new DateOnly(date.Year, monthIndex + 1, 1);
+        var firstMonth = _academic && _view != CalendarView.Month ? 9 : 1;
+        var yearStart = new DateOnly(date.Month >= firstMonth ? date.Year : date.Year - 1, firstMonth, 1);
+        var monthsFromYearStart = (date.Year - yearStart.Year) * 12 + date.Month - firstMonth;
+        return yearStart.AddMonths(monthsFromYearStart / MonthCount * MonthCount); // 0, 3, 6, 9 для квартала
     }
 
     private async Task ChangeViewAsync(CalendarView view)
     {
         _view = view;
+        _start = AlignStart(_start);
+        await LoadAsync();
+    }
+
+    private async Task ChangeYearKindAsync(bool academic)
+    {
+        _academic = academic;
         _start = AlignStart(_start);
         await LoadAsync();
     }

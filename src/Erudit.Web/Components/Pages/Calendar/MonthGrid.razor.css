@@ -2,7 +2,7 @@
 
 .erudit-month-grid {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 4px;
 }
 
@@ -16,6 +16,7 @@
 .erudit-day {
     position: relative;
     aspect-ratio: 1.2;
+    min-width: 0;
     border: 1px solid #e0e0e0;
     border-radius: 6px;
     padding: 4px 6px;
@@ -54,7 +55,7 @@
 }
 
 /* Компактный вид: несколько месяцев на экране — клетки меньше, число по центру. */
-.erudit-compact .erudit-month-title {
+.erudit-month-title {
     font-weight: 500;
     text-transform: capitalize;
     margin-bottom: 4px;
