@@ -1,0 +1,26 @@
+# Служба systemd для тестового стенда.
+# Кладётся в /etc/systemd/system/erudit.service (это делает setup-server.sh).
+[Unit]
+Description=Erudit (тестовый стенд)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=erudit
+Group=erudit
+# /opt/erudit/app — ссылка на текущую версию в /opt/erudit/releases (её переключает deploy.ps1).
+WorkingDirectory=/opt/erudit/app
+ExecStart=/usr/bin/dotnet /opt/erudit/app/Erudit.Web.dll
+Restart=always
+RestartSec=5
+# Даём приложению время спокойно завершить запросы при остановке.
+KillSignal=SIGINT
+TimeoutStopSec=20
+Environment=ASPNETCORE_ENVIRONMENT=Demo
+Environment=ASPNETCORE_URLS=http://0.0.0.0:5000
+Environment=DOTNET_NOLOGO=1
+# Секреты (строка подключения, токен бота) — только на сервере, не в git.
+EnvironmentFile=/etc/erudit/erudit.env
+
+[Install]
+WantedBy=multi-user.target

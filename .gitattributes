@@ -1,0 +1,4 @@
+# Скрипты и конфиги для Linux-сервера — всегда с переводом строки LF (с CRLF bash на сервере не запустит скрипт).
+*.sh text eol=lf
+deploy/*.service text eol=lf
+deploy/*.conf text eol=lf

@@ -1,3 +1,4 @@
+using System.Security.Cryptography.X509Certificates;
 using Erudit.Infrastructure.Auth;
 using Erudit.Infrastructure.Calendar;
 using Hangfire;
@@ -51,6 +52,15 @@ public static class DependencyInjection
             http.DefaultRequestHeaders.Add("Authorization", options.BotToken);
             // Long polling держит запрос до 30 с — оставляем запас.
             http.Timeout = TimeSpan.FromSeconds(60);
+        })
+        // Сертификат MAX выдан Russian Trusted Root CA — доверяем ему только в этом клиенте.
+        .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            SslOptions =
+            {
+                RemoteCertificateValidationCallback = (_, certificate, chain, errors) =>
+                    MaxCertificateTrust.Validate(certificate as X509Certificate2, chain, errors),
+            },
         });
 
         // Производственный календарь: загрузчик и фоновая задача.

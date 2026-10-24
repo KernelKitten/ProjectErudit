@@ -13,7 +13,7 @@
 | Этап | Состояние |
 |---|---|
 | Требования и план | готово, на согласовании |
-| 0. Подготовка (решение, база, бот) | готово (Dev Tunnel перенесён в этап 2) |
+| 0. Подготовка (решение, база, бот) | готово (вместо Dev Tunnel — тестовый стенд) |
 | 1. Модель данных | готово |
 | 2. Вход и роли | готово |
 | 3. Справочники и импорт | готово |
@@ -100,11 +100,7 @@ Erudit.slnx
    ```
    dotnet user-secrets set "Dev:Phones:Андреев Матвей" "+79XXXXXXXXX" --project src/Erudit.Web
    ```
-   Для проверки мини-приложения MAX нужен публичный HTTPS-адрес — туннель (один раз: `winget install Microsoft.devtunnel`, `devtunnel user login -g`, `devtunnel create erudit -a`, `devtunnel port create erudit -p 5067 --protocol http`):
-   ```
-   devtunnel host erudit
-   ```
-   В настройках бота MAX адрес мини-приложения — `https://<адрес туннеля>/max.html`.
+   Мини-приложению MAX нужен публичный HTTPS-адрес — его проверяем на [тестовом стенде](#тестовый-стенд).
 4. Тесты:
    ```
    dotnet test
@@ -113,6 +109,22 @@ Erudit.slnx
    ```
    dotnet user-secrets set "ConnectionStrings:EruditTest" "Host=...;Database=erudit_test;Username=...;Password=..." --project tests/Erudit.Tests
    ```
+
+## Тестовый стенд
+
+https://erudit.23mx.ru — для проверки мини-приложения MAX и показа руководителю. Тестовые (выдуманные) данные, вход только через MAX (входа разработчика `/dev/login` там нет).
+
+- Контейнер LXC (Ubuntu 22.04) на домашнем Proxmox, сайт — служба `erudit` (systemd) на порту 5000, снаружи — существующий nginx с HTTPS ([deploy/nginx-erudit.conf](deploy/nginx-erudit.conf)).
+- Окружение `Demo` (`appsettings.Demo.json`): база `erudit_demo`, схема обновляется сама при запуске, пустая база заполняется тестовыми данными.
+- Секреты — в файле `/etc/erudit/erudit.env` на сервере (`ConnectionStrings__Erudit=...`, `Max__BotToken=...`, `Dev__MyPhone=...`).
+- Сертификат API MAX выдан корневым центром Минцифры (Russian Trusted Root CA), которого нет в стандартных списках Windows и Linux. Приложение доверяет ему только в запросах к MAX (`MaxCertificateTrust`), настраивать систему не нужно.
+- На стенде работает основной бот; на компьютере разработчика — второй, тестовый бот (свой токен в User Secrets), иначе они отбирают друг у друга события.
+
+Публикация (нужен SSH-ключ и имя `erudit-demo` в `~/.ssh/config`):
+```
+.\deploy\deploy.ps1
+```
+Скрипт собирает сайт под Linux, копирует на сервер в новую папку `/opt/erudit/releases/<дата-время>`, переключает на неё ссылку `/opt/erudit/app` и перезапускает службу. Первая настройка сервера — `.\deploy\deploy.ps1 -Setup`. Журнал сайта: `ssh erudit-demo journalctl -u erudit -f`.
 
 ## Лицензия
 

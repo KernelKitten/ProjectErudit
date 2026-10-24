@@ -25,8 +25,26 @@ public sealed class MaxLongPollingService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var me = await bot.GetMeAsync(stoppingToken);
-        logger.LogInformation("Бот MAX подключён: {Name} (@{Username}), id {Id}", me.Name, me.Username, me.UserId);
+        // Сначала проверяем, что бот доступен. Не вышло (нет сети, неверный токен, не доверяем сертификату MAX) —
+        // пишем ошибку и пробуем снова через минуту. Исключение отсюда остановило бы не только бота, а весь сайт.
+        while (true)
+        {
+            try
+            {
+                var me = await bot.GetMeAsync(stoppingToken);
+                logger.LogInformation("Бот MAX подключён: {Name} (@{Username}), id {Id}", me.Name, me.Username, me.UserId);
+                break;
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Бот MAX недоступен, повтор через минуту");
+                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+            }
+        }
 
         long? marker = null;
         while (!stoppingToken.IsCancellationRequested)

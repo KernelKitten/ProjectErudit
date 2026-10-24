@@ -17,6 +17,11 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Корневой сертификат Минцифры — для проверки сертификата MAX (см. Max/MaxCertificateTrust.cs). -->
+    <EmbeddedResource Include="Max\russian_trusted_root_ca.pem" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

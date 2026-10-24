@@ -6,6 +6,8 @@ using Erudit.Web.Auth;
 using Erudit.Web.Components;
 using Hangfire;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.EntityFrameworkCore;
 using MudBlazor.Services;
 
 // Русские названия дней недели и формат дат («ср 21.10») для всего приложения.
@@ -39,12 +41,33 @@ builder.Services.AddAuthorization();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<SignInService>();
 
+// На стенде сайт стоит за nginx: nginx принимает HTTPS и передаёт запрос нам по обычному HTTP.
+// Из заголовков X-Forwarded-For / X-Forwarded-Proto узнаём настоящий адрес клиента и то, что снаружи был https
+// (иначе UseHttpsRedirection будет бесконечно переадресовывать на https).
+// Доверяем любому прокси: порт сайта на стенде открыт только в домашней сети.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
+// Demo — тестовый стенд для показа (erudit.23mx.ru): тестовые данные как при разработке,
+// но без входа разработчика /dev/login (он есть только в Development).
+var isDemo = app.Environment.IsEnvironment("Demo");
+
+if (app.Environment.IsDevelopment() || isDemo)
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<EruditDbContext>();
+
+    // На стенде схема базы обновляется сама при каждом запуске (на компьютере — dotnet ef database update).
+    if (app.Configuration.GetValue<bool>("MigrateOnStartup"))
+    {
+        await db.Database.MigrateAsync();
+    }
 
     // Заполняем пустую базу тестовыми данными (если включено в appsettings.Development.json).
     if (app.Configuration.GetValue<bool>("SeedDevData") && await DevDataSeeder.SeedAsync(db, DateTime.UtcNow))
@@ -67,6 +90,7 @@ if (app.Environment.IsDevelopment())
 }
 
 // Configure the HTTP request pipeline.
+app.UseForwardedHeaders(); // первым — чтобы всё остальное уже видело настоящие адрес и https
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
