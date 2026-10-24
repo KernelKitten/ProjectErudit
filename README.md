@@ -77,8 +77,9 @@ Erudit.slnx
 1. Строка подключения к базе и токен бота MAX хранятся в **User Secrets** (на компьютере разработчика, не в git):
    ```
    dotnet user-secrets set "ConnectionStrings:Erudit" "Host=...;Port=5432;Database=erudit_dev;Username=...;Password=..." --project src/Erudit.Web
-   dotnet user-secrets set "Max:BotToken" "<токен бота>" --project src/Erudit.Web
+   dotnet user-secrets set "Max:BotToken" "токен тестового бота" --project src/Erudit.Web
    ```
+   При разработке работает **тестовый бот** `@id231107791231_1_bot` (имя — в `appsettings.Development.json`), основной бот — на [тестовом стенде](#тестовый-стенд).
    В режиме разработки бот получает сообщения через long polling (`Max:UseLongPolling` в `appsettings.Development.json`) — туннель не нужен. Важно: если бот запущен на двух компьютерах одновременно, они будут «отбирать» друг у друга события.
 2. Запуск сайта: в Visual Studio — открыть `Erudit.slnx` и нажать F5; или из командной строки:
    ```
