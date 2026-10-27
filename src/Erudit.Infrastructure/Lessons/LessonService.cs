@@ -47,6 +47,9 @@ public sealed record LessonDraft
 public sealed record LessonCheck(IReadOnlyList<DateOnly> Dates, IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings)
 {
     public bool CanCreate => Errors.Count == 0;
+
+    /// <summary>У повторения: дни, которые пропущены, потому что нерабочие (чтобы учитель заметил праздники).</summary>
+    public IReadOnlyList<DateOnly> SkippedDates { get; init; } = [];
 }
 
 /// <summary>Быстрый выбор окончания повторения: «до конца четверти» и т. п.</summary>
@@ -129,7 +132,7 @@ public sealed class LessonService(EruditDbContext db, TimeProvider time)
         }
 
         await CheckConflictsAsync(d, dates, errors, warnings, ct);
-        return new LessonCheck(dates, errors, warnings);
+        return new LessonCheck(dates, errors, warnings) { SkippedDates = SkippedDates(d, calendar) };
     }
 
     /// <summary>
@@ -252,6 +255,25 @@ public sealed class LessonService(EruditDbContext db, TimeProvider time)
                 new Series { DayOfWeek = day, FromDate = d.Date, ToDate = d.RepeatUntil!.Value }, calendar))
             .Order()
             .ToList();
+    }
+
+    /// <summary>Дни повторения (по выбранным дням недели), которые серия пропустит как нерабочие.</summary>
+    private static List<DateOnly> SkippedDates(LessonDraft d, WorkingDayCalendar calendar)
+    {
+        if (!d.IsRepeating)
+        {
+            return [];
+        }
+        var days = d.RepeatDays.ToHashSet();
+        var result = new List<DateOnly>();
+        for (var date = d.Date; date <= d.RepeatUntil!.Value; date = date.AddDays(1))
+        {
+            if (days.Contains(date.DayOfWeek) && !calendar.IsWorkingDay(date))
+            {
+                result.Add(date);
+            }
+        }
+        return result;
     }
 
     private async Task CheckReferencesAsync(LessonDraft d, List<int> studentIds, List<string> errors, CancellationToken ct)

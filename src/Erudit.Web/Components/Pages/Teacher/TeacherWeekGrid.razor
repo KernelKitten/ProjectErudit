@@ -3,12 +3,20 @@
 @using Erudit.Domain.Lessons
 @using Erudit.Infrastructure.Lessons
 @inject TeacherWeekService WeekService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IBrowserViewportService Viewport
 
 <MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-2">
     <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" OnClick="() => MoveAsync(-7)" aria-label="Предыдущая неделя" />
     <MudText Typo="Typo.h6" Style="text-align: center">@Title</MudText>
     <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" OnClick="() => MoveAsync(7)" aria-label="Следующая неделя" />
     <MudButton Variant="Variant.Text" OnClick="TodayAsync">Сегодня</MudButton>
+    @if (CanCreate)
+    {
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="() => NewLessonAsync(null, null)">Новое занятие</MudButton>
+    }
     <MudSpacer />
     <div class="erudit-week-all">
         <MudSwitch T="bool" @bind-Value="_showAll" Color="Color.Primary">Все уроки</MudSwitch>
@@ -50,8 +58,12 @@ else
                         </th>
                         @foreach (var p in Columns)
                         {
-                            <td>
-                                @foreach (var lesson in _week.Lessons(day.Date, p.Number))
+                            var cellLessons = _week.Lessons(day.Date, p.Number);
+                            var empty = CanCreate && cellLessons.Count == 0;
+                            @* Пустая клетка — клик открывает «Новое занятие» с этим днём и уроком. *@
+                            <td class="@(empty ? "erudit-week-empty" : null)" title="@(empty ? "Новое занятие" : null)"
+                                @onclick="() => empty ? NewLessonAsync(day.Date, p.Number) : Task.CompletedTask">
+                                @foreach (var lesson in cellLessons)
                                 {
                                     <div class="@LessonClass(lesson)" title="@Tooltip(lesson)">
                                         <div class="erudit-lesson-subject">
@@ -116,6 +128,9 @@ else
     /// <summary>Чью неделю показываем.</summary>
     [Parameter, EditorRequired] public int TeacherId { get; set; }
 
+    /// <summary>Можно ли создавать занятия (учитель — в своей неделе).</summary>
+    [Parameter] public bool CanCreate { get; set; }
+
     private DateOnly _monday;
     private bool _showAll;
     private TeacherWeek? _week;
@@ -143,6 +158,31 @@ else
     {
         _monday = TeacherWeekService.MondayOf(WeekService.Today);
         await LoadAsync();
+    }
+
+    /// <summary>
+    /// Окно «Новое занятие». Клик по клетке — её день и урок; кнопка — сегодня (если сегодня в показанной неделе),
+    /// иначе понедельник показанной недели. На телефоне окно — на весь экран.
+    /// </summary>
+    private async Task NewLessonAsync(DateOnly? date, int? lessonNumber)
+    {
+        var today = WeekService.Today;
+        date ??= today >= _monday && today < _monday.AddDays(7) ? today : _monday;
+        var parameters = new DialogParameters<NewLessonDialog>
+        {
+            { d => d.TeacherId, TeacherId },
+            { d => d.Date, date.Value },
+            { d => d.LessonNumber, lessonNumber },
+        };
+        var phone = await Viewport.GetCurrentBreakpointAsync() <= Breakpoint.Sm;
+        var dialog = await DialogService.ShowAsync<NewLessonDialog>("Новое занятие", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, FullScreen = phone, CloseButton = true });
+
+        if (await dialog.Result is { Canceled: false, Data: int created })
+        {
+            Snackbar.Add($"Создано: {NewLessonDialog.Count(created)}", Severity.Success);
+            await LoadAsync();
+        }
     }
 
     /// <summary>«26–30 октября 2026» или «28 сентября – 2 октября 2026».</summary>

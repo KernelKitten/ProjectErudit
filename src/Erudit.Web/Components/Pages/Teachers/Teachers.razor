@@ -85,8 +85,7 @@
     private bool _anyTeachers;
     private string _search = "";
 
-    private IEnumerable<Row> Filtered => (_rows ?? []).Where(r =>
-        _search.Length == 0 || r.Person.FullName.Contains(_search, StringComparison.CurrentCultureIgnoreCase));
+    private IEnumerable<Row> Filtered => (_rows ?? []).Where(r => TextSearch.Matches(r.Person.FullName, _search));
 
     protected override Task OnInitializedAsync() => LoadAsync();
 

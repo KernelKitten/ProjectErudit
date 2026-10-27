@@ -58,8 +58,7 @@
     }
 
     private Task<IEnumerable<TeacherOption>> SearchTeachers(string? text, CancellationToken ct) =>
-        Task.FromResult(_teachers.Where(t => string.IsNullOrWhiteSpace(text)
-            || t.Name.Contains(text, StringComparison.CurrentCultureIgnoreCase)));
+        Task.FromResult(_teachers.Where(t => TextSearch.Matches(t.Name, text)));
 
     private async Task SaveAsync()
     {

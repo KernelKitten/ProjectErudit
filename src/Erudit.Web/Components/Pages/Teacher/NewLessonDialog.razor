@@ -1,0 +1,423 @@
+@* Окно «Новое занятие». Открывается из сетки недели (клик по пустой клетке или кнопка «Новое занятие»).
+   Проверки и создание — LessonService (Infrastructure); окно только собирает LessonDraft и показывает результат.
+   Сам сохраняет и закрывается с результатом Ok(сколько занятий создано). *@
+@using Erudit.Domain.Lessons
+@using Erudit.Infrastructure.Lessons
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject LessonFormService FormService
+@inject TimeProvider Time
+
+<MudDialog>
+    <DialogContent>
+        @if (_data is null)
+        {
+            <MudProgressLinear Indeterminate />
+        }
+        else
+        {
+            @* ---------- Когда ---------- *@
+            <MudText Typo="Typo.subtitle2" Class="mt-1">Когда</MudText>
+            <MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Start">
+                <MudDatePicker Editable Date="_date" DateChanged="DateChangedAsync" Label="Дата" Style="max-width: 170px" />
+                <MudSelect T="int" Value="_period" ValueChanged="PeriodChanged" Label="Урок" Style="min-width: 220px; max-width: 260px">
+                    @foreach (var p in _data.Periods)
+                    {
+                        <MudSelectItem T="int" Value="p.Number">@p.Number урок · @p.Start.ToString("H:mm")–@p.End.ToString("H:mm")</MudSelectItem>
+                    }
+                    <MudSelectItem T="int" Value="Manual">Время вручную</MudSelectItem>
+                </MudSelect>
+                @if (_period == Manual)
+                {
+                    <MudTimePicker Editable Time="_manualStart" TimeChanged="t => { _manualStart = t; Changed(); }" Label="Начало"
+                                   Style="max-width: 120px" />
+                    <MudNumericField T="int" Value="_manualMinutes" ValueChanged="m => { _manualMinutes = m; Changed(); }"
+                                     Label="Минут" Min="5" Max="240" Step="5" Style="max-width: 110px" />
+                }
+            </MudStack>
+
+            <MudCheckBox T="bool" Value="_repeat" ValueChanged="RepeatChangedAsync" Label="Повторять каждую неделю" Dense Class="mt-2" />
+            @if (_repeat)
+            {
+                <div class="ml-4">
+                    <MudStack Row Wrap="Wrap.Wrap" Spacing="0">
+                        @foreach (var day in WeekDays)
+                        {
+                            <MudCheckBox T="bool" Value="_days.Contains(day)" ValueChanged="on => ToggleDay(day, on)"
+                                         Label="@DayName(day)" Dense />
+                        }
+                    </MudStack>
+                    <MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center">
+                        <MudDatePicker Editable Date="_until" DateChanged="d => { _until = d; Changed(); }" Label="До какой даты"
+                                       Style="max-width: 170px" />
+                        @foreach (var end in _repeatEnds)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="() => SetUntil(end.Date)">@end.Label</MudButton>
+                        }
+                    </MudStack>
+                </div>
+            }
+
+            @* ---------- Что ---------- *@
+            <MudText Typo="Typo.subtitle2" Class="mt-4">Что</MudText>
+            <MudStack Row Wrap="Wrap.Wrap">
+                <MudSelect T="int?" Value="_subjectId" ValueChanged="v => { _subjectId = v; Changed(); }" Label="Предмет"
+                           Style="min-width: 200px">
+                    @foreach (var s in _data.Subjects)
+                    {
+                        <MudSelectItem T="int?" Value="s.Id">@s.Name</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudSelect T="int?" Value="_roomId" ValueChanged="v => { _roomId = v; Changed(); }" Label="Кабинет"
+                           Style="min-width: 160px">
+                    @foreach (var r in _data.Rooms)
+                    {
+                        <MudSelectItem T="int?" Value="r.Id">@r.Name</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudNumericField T="int" Value="_capacity" ValueChanged="c => { _capacity = c; Changed(); }" Label="Мест"
+                                 Min="@Math.Max(1, _selected.Count)" Max="40" Style="max-width: 100px"
+                                 HelperText="@(_selected.Count > 0 ? $"не меньше {_selected.Count}" : null)" />
+            </MudStack>
+            <MudStack Row Wrap="Wrap.Wrap">
+                <MudTextField @bind-Value="_topic" Label="Тема" MaxLength="200" Style="min-width: 240px" />
+                <MudTextField @bind-Value="_comment" Label="Комментарий" MaxLength="500" Style="min-width: 240px" />
+            </MudStack>
+
+            @* ---------- Ученики ---------- *@
+            <MudText Typo="Typo.subtitle2" Class="mt-4">Ученики @(_selected.Count > 0 ? $"(выбрано {_selected.Count})" : "— можно не выбирать")</MudText>
+            <MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.End">
+                <MudSelect T="int?" Value="_classId" ValueChanged="ClassChangedAsync" Label="Класс" Clearable Style="max-width: 140px">
+                    @foreach (var c in _data.Classes)
+                    {
+                        <MudSelectItem T="int?" Value="c.Id">@c.Name</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudAutocomplete T="StudentOption" @ref="_search" Value="null" ValueChanged="AddFromSearchAsync"
+                                 SearchFunc="SearchAsync" ToStringFunc="s => s?.Label" DebounceInterval="300" MinCharacters="2"
+                                 Label="Поиск по фамилии по всей школе" Style="min-width: 260px" ResetValueOnEmptyText />
+            </MudStack>
+            @if (_classStudents.Count > 0)
+            {
+                <div class="erudit-class-students">
+                    @foreach (var s in _classStudents)
+                    {
+                        <MudCheckBox T="bool" Value="IsSelected(s)" ValueChanged="on => ToggleStudent(s, on)" Label="@s.Name" Dense />
+                    }
+                </div>
+            }
+            @if (_selected.Count > 0)
+            {
+                <div class="mt-2">
+                    @foreach (var s in _selected)
+                    {
+                        <MudChip T="string" Size="Size.Small" OnClose="() => ToggleStudent(s, false)">@s.Label</MudChip>
+                    }
+                </div>
+            }
+
+            @* ---------- Результат проверки ---------- *@
+            @if (_check is not null)
+            {
+                @foreach (var e in _check.Errors)
+                {
+                    <MudAlert Severity="Severity.Error" Dense Class="mt-3">@e</MudAlert>
+                }
+                @foreach (var w in _check.Warnings)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense Class="mt-3">@w</MudAlert>
+                }
+                @if (_check.CanCreate && _check.Dates.Count > 1)
+                {
+                    <MudAlert Severity="Severity.Info" Dense Class="mt-3">@Summary(_check)</MudAlert>
+                }
+            }
+            @if (_error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense Class="mt-3">@_error</MudAlert>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Отмена</MudButton>
+        <MudButton Color="@(NeedsConfirmation && _check!.Warnings.Count > 0 ? Color.Warning : Color.Primary)" Variant="Variant.Filled"
+                   OnClick="CreateAsync" Disabled="_busy || _data is null">@CreateText</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+
+    [Parameter, EditorRequired] public int TeacherId { get; set; }
+    [Parameter, EditorRequired] public DateOnly Date { get; set; }
+    /// <summary>Урок клетки, по которой кликнули; пусто — кнопка «Новое занятие».</summary>
+    [Parameter] public int? LessonNumber { get; set; }
+
+    private const int Manual = -1;
+    private static readonly DayOfWeek[] WeekDays =
+        [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday];
+
+    private LessonFormData? _data;
+    private DateTime? _date;
+    private int _period;
+    private TimeSpan? _manualStart;
+    private int _manualMinutes = 40;
+    private bool _repeat;
+    private readonly HashSet<DayOfWeek> _days = [];
+    private DateTime? _until;
+    private IReadOnlyList<RepeatEnd> _repeatEnds = [];
+    private int? _subjectId;
+    private int? _roomId;
+    private int _capacity = 1;
+    private string? _topic;
+    private string? _comment;
+
+    private int? _classId;
+    private IReadOnlyList<StudentOption> _classStudents = [];
+    private readonly List<StudentOption> _selected = [];
+    private MudAutocomplete<StudentOption>? _search;
+
+    private LessonCheck? _check;
+    /// <summary>Для какого черновика показана проверка: изменили форму — проверяем заново.</summary>
+    private string? _checkedKey;
+    private string? _error;
+    private bool _busy;
+
+    private DateOnly DateValue => DateOnly.FromDateTime(_date ?? Date.ToDateTime(TimeOnly.MinValue));
+
+    protected override async Task OnInitializedAsync()
+    {
+        _date = Date.ToDateTime(TimeOnly.MinValue);
+        _days.Add(Date.DayOfWeek);
+        _data = await FormService.LoadAsync(TeacherId, Date);
+        _subjectId = _data.LastSubjectId;
+        _roomId = _data.LastRoomId;
+        // Клик по клетке — её урок; кнопка «Новое занятие» — 8-й (доп. занятия обычно после уроков).
+        _period = _data.Periods.Any(p => p.Number == LessonNumber) ? LessonNumber!.Value
+            : _data.Periods.Any(p => p.Number == 8) ? 8
+            : _data.Periods.FirstOrDefault()?.Number ?? Manual;
+        _manualStart = _data.Periods.FirstOrDefault(p => p.Number == _period)?.Start.ToTimeSpan() ?? new TimeSpan(14, 0, 0);
+    }
+
+    // ---------------------------------------------------------------- Поля формы
+
+    /// <summary>Любое изменение формы: старая проверка больше не подходит.</summary>
+    private void Changed()
+    {
+        _check = null;
+        _checkedKey = null;
+        _error = null;
+    }
+
+    private async Task DateChangedAsync(DateTime? date)
+    {
+        _date = date;
+        Changed();
+        if (_repeat)
+        {
+            await LoadRepeatEndsAsync();
+        }
+    }
+
+    private void PeriodChanged(int period)
+    {
+        // Переключились на «вручную» — начинаем со времени выбранного урока.
+        if (period == Manual && _data!.Periods.FirstOrDefault(p => p.Number == _period) is { } current)
+        {
+            _manualStart = current.Start.ToTimeSpan();
+            _manualMinutes = current.DurationMinutes;
+        }
+        _period = period;
+        Changed();
+    }
+
+    private async Task RepeatChangedAsync(bool repeat)
+    {
+        _repeat = repeat;
+        Changed();
+        if (repeat)
+        {
+            _days.Clear();
+            _days.Add(DateValue.DayOfWeek);
+            await LoadRepeatEndsAsync();
+            _until ??= _repeatEnds.FirstOrDefault()?.Date.ToDateTime(TimeOnly.MinValue);
+        }
+    }
+
+    private async Task LoadRepeatEndsAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _repeatEnds = await new LessonService(db, Time).GetRepeatEndsAsync(DateValue);
+    }
+
+    private void ToggleDay(DayOfWeek day, bool on)
+    {
+        if (on) _days.Add(day); else _days.Remove(day);
+        Changed();
+    }
+
+    private void SetUntil(DateOnly date)
+    {
+        _until = date.ToDateTime(TimeOnly.MinValue);
+        Changed();
+    }
+
+    private async Task ClassChangedAsync(int? classId)
+    {
+        _classId = classId;
+        _classStudents = classId is null ? [] : await FormService.StudentsOfClassAsync(classId.Value, DateValue);
+    }
+
+    private async Task<IEnumerable<StudentOption>> SearchAsync(string? text, CancellationToken ct) =>
+        await FormService.SearchStudentsAsync(text, DateValue, ct);
+
+    private async Task AddFromSearchAsync(StudentOption? student)
+    {
+        if (student is not null)
+        {
+            ToggleStudent(student, true);
+            await _search!.ClearAsync();
+        }
+    }
+
+    private bool IsSelected(StudentOption s) => _selected.Any(x => x.Id == s.Id);
+
+    private void ToggleStudent(StudentOption student, bool on)
+    {
+        if (on && !IsSelected(student))
+        {
+            _selected.Add(student);
+            // Мест не меньше, чем выбрано учеников.
+            _capacity = Math.Max(_capacity, _selected.Count);
+        }
+        else if (!on)
+        {
+            _selected.RemoveAll(x => x.Id == student.Id);
+        }
+        Changed();
+    }
+
+    // ---------------------------------------------------------------- Проверка и создание
+
+    private LessonDraft? BuildDraft()
+    {
+        var period = _data!.Periods.FirstOrDefault(p => p.Number == _period);
+        if (_subjectId is null || _roomId is null)
+        {
+            _error = "Выберите предмет и кабинет.";
+            return null;
+        }
+        if (period is null && _manualStart is null)
+        {
+            _error = "Укажите время начала.";
+            return null;
+        }
+        if (_repeat && _days.Count == 0)
+        {
+            _error = "Отметьте хотя бы один день недели.";
+            return null;
+        }
+        return new LessonDraft
+        {
+            TeacherId = TeacherId,
+            SubjectId = _subjectId.Value,
+            RoomId = _roomId.Value,
+            Date = DateValue,
+            RepeatDays = _repeat ? _days.ToList() : [],
+            RepeatUntil = _repeat && _until is { } until ? DateOnly.FromDateTime(until) : null,
+            LessonNumber = period?.Number,
+            StartTime = period?.Start ?? TimeOnly.FromTimeSpan(_manualStart!.Value),
+            DurationMinutes = period?.DurationMinutes ?? _manualMinutes,
+            Capacity = _capacity,
+            Topic = _topic,
+            Comment = _comment,
+            StudentIds = _selected.Select(s => s.Id).ToList(),
+        };
+    }
+
+    /// <summary>Ключ черновика — чтобы понять, что форма не менялась с последней проверки.</summary>
+    private static string Key(LessonDraft d) => string.Join("|", d.SubjectId, d.RoomId, d.Date, string.Join(",", d.RepeatDays.Order()),
+        d.RepeatUntil, d.LessonNumber, d.StartTime, d.DurationMinutes, d.Capacity, d.Topic, d.Comment,
+        string.Join(",", d.StudentIds.Order()));
+
+    /// <summary>Проверка уже показана и ждёт подтверждения: предупреждения или «будет создано N занятий».</summary>
+    private bool NeedsConfirmation => _check is { CanCreate: true } && _checkedKey is not null
+                                      && (_check.Warnings.Count > 0 || _check.Dates.Count > 1);
+
+    private string CreateText => !NeedsConfirmation ? "Создать"
+        : _check!.Warnings.Count > 0 ? "Создать всё равно"
+        : $"Создать {Count(_check.Dates.Count)}";
+
+    private async Task CreateAsync()
+    {
+        _error = null;
+        var draft = BuildDraft();
+        if (draft is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            var user = (await AuthState).User;
+            var actor = new LessonActor(user.GetPersonId() ?? 0, user.IsInRole(AppRoles.Admin) || user.IsInRole(AppRoles.HeadTeacher));
+            // Контекст «от имени» учителя: созданные занятия попадут в журнал изменений с его id.
+            await using var db = await DbFactory.CreateForAsync(user);
+            var service = new LessonService(db, Time);
+
+            var key = Key(draft);
+            var confirmed = NeedsConfirmation && _checkedKey == key;
+            if (!confirmed)
+            {
+                _check = await service.CheckAsync(draft, actor);
+                // Можно создавать сразу: разовое занятие без предупреждений. Иначе — показать и ждать подтверждения.
+                if (!_check.CanCreate || _check.Warnings.Count > 0 || _check.Dates.Count > 1)
+                {
+                    _checkedKey = _check.CanCreate ? key : null;
+                    return;
+                }
+            }
+
+            var created = await service.CreateAsync(draft, actor, warningsConfirmed: true);
+            Dialog.Close(DialogResult.Ok(created));
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Пока учитель думал, кто-то занял время — сервис отказал. Показываем причину и проверяем заново.
+            _error = ex.Message;
+            _check = null;
+            _checkedKey = null;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // ---------------------------------------------------------------- Тексты
+
+    private static string DayName(DayOfWeek day) => day switch
+    {
+        DayOfWeek.Monday => "Пн", DayOfWeek.Tuesday => "Вт", DayOfWeek.Wednesday => "Ср",
+        DayOfWeek.Thursday => "Чт", DayOfWeek.Friday => "Пт", DayOfWeek.Saturday => "Сб", _ => "Вс",
+    };
+
+    /// <summary>«1 занятие», «3 занятия», «9 занятий».</summary>
+    public static string Count(int n)
+    {
+        var word = (n % 100) is >= 11 and <= 14 ? "занятий"
+            : (n % 10) switch { 1 => "занятие", 2 or 3 or 4 => "занятия", _ => "занятий" };
+        return $"{n} {word}";
+    }
+
+    private static string Summary(LessonCheck check)
+    {
+        var text = $"Будет создано {Count(check.Dates.Count)}: с {check.Dates[0]:dd.MM} по {check.Dates[^1]:dd.MM.yyyy}.";
+        if (check.SkippedDates.Count > 0)
+        {
+            text += $" Пропущены нерабочие дни: {string.Join(", ", check.SkippedDates.Select(d => d.ToString("dd.MM")))}.";
+        }
+        return text;
+    }
+}

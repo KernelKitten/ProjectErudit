@@ -92,6 +92,7 @@ public class LessonServiceTests(TestDatabase database)
         var check = await Service(db).CheckAsync(draft, As(w));
         Assert.Equal(7, check.Dates.Count);
         Assert.DoesNotContain(new DateOnly(2054, 9, 15), check.Dates);
+        Assert.Equal([new DateOnly(2054, 9, 15)], check.SkippedDates);
         Assert.Equal(7, await Service(db).CreateAsync(draft, As(w), warningsConfirmed: false));
 
         var series = await db.Series.Where(s => s.TeacherId == w.TeacherId).OrderBy(s => s.Id).ToListAsync();

@@ -85,7 +85,7 @@ else
     private sealed record PersonRow(int Id, string FullName, List<Role> Roles, bool LeadsClass, string? ClassName);
 
     private IEnumerable<PersonRow> Filtered => _people!
-        .Where(p => _search.Length == 0 || p.FullName.Contains(_search, StringComparison.CurrentCultureIgnoreCase))
+        .Where(p => TextSearch.Matches(p.FullName, _search))
         .Where(p => _role is null || p.Roles.Contains(_role.Value));
 
     protected override async Task OnInitializedAsync()

@@ -50,6 +50,25 @@
     padding: 2px;
 }
 
+/* Пустая клетка, в которой можно создать занятие: при наведении — «+». */
+.erudit-week-table td.erudit-week-empty {
+    cursor: pointer;
+}
+
+.erudit-week-table td.erudit-week-empty:hover {
+    background: #e8eef8;
+    border-color: #1F3864;
+}
+
+.erudit-week-table td.erudit-week-empty:hover::after {
+    content: "+";
+    display: block;
+    text-align: center;
+    font-size: 1.5rem;
+    line-height: 56px;
+    color: #1F3864;
+}
+
 /* Дни: нерабочий, каникулы, сегодня. */
 .erudit-week-off td,
 .erudit-week-off.erudit-week-list-day {
