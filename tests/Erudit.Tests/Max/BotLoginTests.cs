@@ -91,7 +91,7 @@ public class BotLoginTests(TestDatabase database)
         await handler.HandleAsync(update);
     }
 
-    private LoginRequestService NewLoginRequestService() => new(new TestDbFactory(database), TimeProvider.System);
+    private LoginRequestService NewLoginRequestService() => new(database.CreateFactory(), TimeProvider.System);
 
     private async Task<Person> PersonWithPhoneAsync(string lastName)
     {
@@ -144,10 +144,5 @@ public class BotLoginTests(TestDatabase database)
             Answers.Add(message);
             return Task.CompletedTask;
         }
-    }
-
-    private sealed class TestDbFactory(TestDatabase database) : IDbContextFactory<EruditDbContext>
-    {
-        public EruditDbContext CreateDbContext() => database.CreateContext();
     }
 }

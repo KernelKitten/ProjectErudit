@@ -1,0 +1,187 @@
+/* Сетка недели учителя (scoped CSS — действует только внутри TeacherWeekGrid).
+   Цвета дней — как в календаре (MonthGrid): нерабочий — красноватый, каникулы — жёлтый. */
+
+.erudit-week-table {
+    overflow-x: auto;
+}
+
+.erudit-week-table table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 3px;
+    table-layout: fixed;
+}
+
+.erudit-week-table th {
+    font-weight: 500;
+    color: #555;
+    padding: 4px;
+    text-align: center;
+}
+
+.erudit-week-corner,
+.erudit-week-table th.erudit-week-day {
+    width: 120px;
+}
+
+.erudit-week-table th.erudit-week-day {
+    text-align: left;
+    vertical-align: top;
+    color: inherit;
+}
+
+/* «пн 26.10» → «Пн 26.10» (только дата, не подписи каникул). */
+.erudit-week-date::first-letter {
+    text-transform: uppercase;
+}
+
+.erudit-week-time {
+    font-size: 0.75rem;
+    color: #888;
+    font-weight: 400;
+}
+
+.erudit-week-table td {
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background: #fff;
+    height: 64px;
+    vertical-align: top;
+    padding: 2px;
+}
+
+/* Дни: нерабочий, каникулы, сегодня. */
+.erudit-week-off td,
+.erudit-week-off.erudit-week-list-day {
+    background: #fdecea;
+}
+
+.erudit-week-vacation td,
+.erudit-week-vacation.erudit-week-list-day {
+    background: #fff4d6;
+    border-color: #f0b429;
+}
+
+.erudit-week-off.erudit-week-vacation td,
+.erudit-week-off.erudit-week-vacation.erudit-week-list-day {
+    background: linear-gradient(135deg, #fdecea 50%, #fff4d6 50%);
+}
+
+.erudit-week-vacation-part td,
+.erudit-week-vacation-part.erudit-week-list-day {
+    border: 2px dashed #f0b429;
+}
+
+.erudit-week-today th.erudit-week-day {
+    color: #1F3864;
+    font-weight: 700;
+}
+
+.erudit-week-today td {
+    border-color: #1F3864;
+}
+
+.erudit-week-today.erudit-week-list-day {
+    border: 2px solid #1F3864;
+}
+
+/* Занятие в клетке. */
+.erudit-lesson {
+    background: #e8eef8;
+    border-left: 3px solid #1F3864;
+    border-radius: 4px;
+    padding: 2px 6px;
+    margin-bottom: 2px;
+    font-size: 0.85rem;
+    line-height: 1.3;
+    overflow: hidden;
+}
+
+.erudit-lesson-subject {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.erudit-lesson-meta {
+    font-size: 0.75rem;
+    color: #555;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.erudit-lesson ::deep .erudit-lesson-repeat {
+    font-size: 0.9rem;
+    vertical-align: -2px;
+    opacity: 0.6;
+}
+
+.erudit-lesson-held {
+    border-left-color: #2e7d32;
+    background: #e8f5e9;
+}
+
+.erudit-lesson-notheld {
+    border-left-color: #ef6c00;
+    background: #fff3e0;
+}
+
+.erudit-lesson-cancelled {
+    border-left-color: #9e9e9e;
+    background: #f5f5f5;
+    color: #9e9e9e;
+    text-decoration: line-through;
+}
+
+.erudit-lesson-cancelled .erudit-lesson-meta {
+    color: #9e9e9e;
+}
+
+/* Телефон: вместо сетки — список по дням. */
+.erudit-week-list {
+    display: none;
+}
+
+.erudit-week-list-day {
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 6px 8px;
+    margin-bottom: 8px;
+    background: #fff;
+}
+
+.erudit-week-list-head {
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.erudit-week-list-head span {
+    display: inline-block; /* ::first-letter работает только у блочных элементов */
+}
+
+.erudit-week-list-head span::first-letter {
+    text-transform: uppercase;
+}
+
+.erudit-week-list-empty {
+    color: #999;
+    font-size: 0.85rem;
+}
+
+/* Уже ~960 px (планшет, узкое окно) 8–10 столбцов не читаются — тоже список. */
+@media (max-width: 959.98px) {
+    .erudit-week-table {
+        display: none;
+    }
+
+    .erudit-week-list {
+        display: block;
+    }
+
+    /* «Все уроки» — только для сетки; в списке и так показаны все занятия. */
+    .erudit-week-all {
+        display: none;
+    }
+}

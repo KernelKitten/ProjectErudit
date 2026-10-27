@@ -1,59 +1,21 @@
 @page "/teacher"
 @attribute [Authorize(Roles = AppRoles.Teacher)]
-@using Erudit.Domain.Lessons
-@inject IDbContextFactory<EruditDbContext> DbFactory
-@inject TimeProvider Time
 
 <PageTitle>Мои занятия</PageTitle>
 
-<MudText Typo="Typo.h5" GutterBottom>Мои занятия: эта и следующая неделя</MudText>
-<MudText Typo="Typo.body2" Class="mb-4">Пока только просмотр. Создание занятий и календарь — этап 4.</MudText>
+<MudText Typo="Typo.h5" GutterBottom>Мои занятия</MudText>
 
-@if (_lessons is null)
+@if (_personId is { } id)
 {
-    <MudProgressLinear Indeterminate />
-}
-else if (_lessons.Count == 0)
-{
-    <MudAlert Severity="Severity.Info">На ближайшие две недели занятий нет.</MudAlert>
-}
-else
-{
-    <MudSimpleTable Dense Hover>
-        <thead>
-            <tr><th>День</th><th>Время</th><th>Предмет</th><th>Кабинет</th><th>Учеников</th><th>Статус</th></tr>
-        </thead>
-        <tbody>
-            @foreach (var l in _lessons)
-            {
-                <tr>
-                    <td>@LessonFormat.Date(l.StartsAt)</td>
-                    <td>@LessonFormat.Time(l)</td>
-                    <td>@l.Subject.Name @(l.Topic is null ? "" : $"· {l.Topic}")</td>
-                    <td>@l.Room.Name</td>
-                    <td>@l.Enrollments.Count(e => e.Status == EnrollmentStatus.Active) / @l.Capacity</td>
-                    <td><MudChip T="string" Size="Size.Small" Color="LessonFormat.StatusColor(l.Status)">@LessonFormat.Status(l.Status)</MudChip></td>
-                </tr>
-            }
-        </tbody>
-    </MudSimpleTable>
+    <TeacherWeekGrid TeacherId="id" />
 }
 
 @code {
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
-    private List<Lesson>? _lessons;
+    private int? _personId;
 
     protected override async Task OnInitializedAsync()
     {
-        var personId = (await AuthState).User.GetPersonId();
-        var from = LessonFormat.WeekStartUtc(Time.GetUtcNow().UtcDateTime);
-        var to = from.AddDays(14);
-
-        await using var db = await DbFactory.CreateDbContextAsync();
-        _lessons = await db.Lessons
-            .Include(l => l.Subject).Include(l => l.Room).Include(l => l.Enrollments)
-            .Where(l => l.TeacherId == personId && l.StartsAt >= from && l.StartsAt < to)
-            .OrderBy(l => l.StartsAt)
-            .ToListAsync();
+        _personId = (await AuthState).User.GetPersonId();
     }
 }

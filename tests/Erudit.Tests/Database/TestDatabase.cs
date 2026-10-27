@@ -29,6 +29,14 @@ public sealed class TestDatabase : IAsyncLifetime
         .UseSnakeCaseNamingConvention()
         .Options);
 
+    /// <summary>Фабрика контекстов — для сервисов, которые, как страницы, создают контекст на каждую операцию.</summary>
+    public IDbContextFactory<EruditDbContext> CreateFactory() => new Factory(this);
+
+    private sealed class Factory(TestDatabase database) : IDbContextFactory<EruditDbContext>
+    {
+        public EruditDbContext CreateDbContext() => database.CreateContext();
+    }
+
     public async Task InitializeAsync()
     {
         if (ConnectionString is null)

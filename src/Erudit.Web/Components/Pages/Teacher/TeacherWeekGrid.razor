@@ -1,0 +1,187 @@
+@* Неделя учителя сеткой, как школьное расписание: строки — дни, столбцы — уроки.
+   Отдельный компонент: учитель видит свою неделю, а завуч и администратор (шаг 6) — неделю любого учителя. *@
+@using Erudit.Domain.Lessons
+@using Erudit.Infrastructure.Lessons
+@inject TeacherWeekService WeekService
+
+<MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-2">
+    <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" OnClick="() => MoveAsync(-7)" aria-label="Предыдущая неделя" />
+    <MudText Typo="Typo.h6" Style="text-align: center">@Title</MudText>
+    <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" OnClick="() => MoveAsync(7)" aria-label="Следующая неделя" />
+    <MudButton Variant="Variant.Text" OnClick="TodayAsync">Сегодня</MudButton>
+    <MudSpacer />
+    <div class="erudit-week-all">
+        <MudSwitch T="bool" @bind-Value="_showAll" Color="Color.Primary">Все уроки</MudSwitch>
+    </div>
+</MudStack>
+
+@if (_week is null)
+{
+    <MudProgressLinear Indeterminate />
+}
+else if (_week.AllPeriods.Count == 0)
+{
+    <MudAlert Severity="Severity.Warning">Не заполнено расписание звонков — сетку построить нельзя. Его заполняет администратор или завуч.</MudAlert>
+}
+else
+{
+    @* На ноутбуке — сетка. *@
+    <div class="erudit-week-table">
+        <table>
+            <thead>
+                <tr>
+                    <th class="erudit-week-corner"></th>
+                    @foreach (var p in Columns)
+                    {
+                        <th>
+                            <div>@p.Number урок</div>
+                            <div class="erudit-week-time">@p.Start.ToString("H:mm")–@p.End.ToString("H:mm")</div>
+                        </th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var day in _week.Days)
+                {
+                    <tr class="@DayClass(day)">
+                        <th class="erudit-week-day">
+                            <div class="erudit-week-date">@day.Date.ToString("ddd dd.MM")</div>
+                            <DayNotes Day="day" />
+                        </th>
+                        @foreach (var p in Columns)
+                        {
+                            <td>
+                                @foreach (var lesson in _week.Lessons(day.Date, p.Number))
+                                {
+                                    <div class="@LessonClass(lesson)" title="@Tooltip(lesson)">
+                                        <div class="erudit-lesson-subject">
+                                            @if (lesson.IsSeries)
+                                            {
+                                                <MudIcon Icon="@Icons.Material.Outlined.Repeat" Size="Size.Small" Class="erudit-lesson-repeat" />
+                                            }
+                                            @lesson.SubjectShort
+                                        </div>
+                                        <div class="erudit-lesson-meta">@lesson.Room · @lesson.Enrolled/@lesson.Capacity</div>
+                                        @if (lesson.LessonNumber != p.Number || lesson.StartTime != p.Start)
+                                        {
+                                            @* Время не совпадает со звонком (задано вручную) — показываем точное. *@
+                                            <div class="erudit-lesson-meta">@TimeRange(lesson)</div>
+                                        }
+                                    </div>
+                                }
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @* На телефоне сетка не помещается — список по дням. *@
+    <div class="erudit-week-list">
+        @foreach (var day in _week.Days)
+        {
+            <div class="erudit-week-list-day @DayClass(day)">
+                <div class="erudit-week-list-head">
+                    <span>@day.Date.ToString("dddd, d MMMM")</span>
+                    <DayNotes Day="day" />
+                </div>
+                @{ var lessons = _week.Lessons(day.Date).ToList(); }
+                @if (lessons.Count == 0)
+                {
+                    <div class="erudit-week-list-empty">Занятий нет</div>
+                }
+                @foreach (var lesson in lessons)
+                {
+                    <div class="@LessonClass(lesson)" title="@Tooltip(lesson)">
+                        <div class="erudit-lesson-meta">
+                            @(lesson.LessonNumber is { } n ? $"{n} урок · " : "")@TimeRange(lesson)
+                        </div>
+                        <div class="erudit-lesson-subject">
+                            @if (lesson.IsSeries)
+                            {
+                                <MudIcon Icon="@Icons.Material.Outlined.Repeat" Size="Size.Small" Class="erudit-lesson-repeat" />
+                            }
+                            @lesson.Subject
+                        </div>
+                        <div class="erudit-lesson-meta">@lesson.Room · записано @lesson.Enrolled из @lesson.Capacity</div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    /// <summary>Чью неделю показываем.</summary>
+    [Parameter, EditorRequired] public int TeacherId { get; set; }
+
+    private DateOnly _monday;
+    private bool _showAll;
+    private TeacherWeek? _week;
+
+    private IReadOnlyList<Erudit.Domain.School.LessonPeriod> Columns => _showAll ? _week!.AllPeriods : _week!.Columns;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_monday == default)
+        {
+            _monday = TeacherWeekService.MondayOf(WeekService.Today);
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => _week = await WeekService.LoadAsync(TeacherId, _monday);
+
+    private async Task MoveAsync(int days)
+    {
+        _monday = _monday.AddDays(days);
+        await LoadAsync();
+    }
+
+    private async Task TodayAsync()
+    {
+        _monday = TeacherWeekService.MondayOf(WeekService.Today);
+        await LoadAsync();
+    }
+
+    /// <summary>«26–30 октября 2026» или «28 сентября – 2 октября 2026».</summary>
+    private string Title
+    {
+        get
+        {
+            var last = _week?.Days[^1].Date ?? _monday.AddDays(4);
+            return _monday.Month == last.Month
+                ? $"{_monday.Day}–{last:d MMMM yyyy}"
+                : $"{_monday:d MMMM} – {last:d MMMM yyyy}";
+        }
+    }
+
+    private static string DayClass(WeekDay day) => string.Join(' ', new[]
+    {
+        day.IsWorking ? null : "erudit-week-off",
+        day.VacationAll is not null ? "erudit-week-vacation" : null,
+        day.VacationPart is not null ? "erudit-week-vacation-part" : null,
+        day.IsToday ? "erudit-week-today" : null,
+    }.Where(c => c is not null));
+
+    private static string LessonClass(WeekLesson lesson) => lesson.Status switch
+    {
+        LessonStatus.Cancelled => "erudit-lesson erudit-lesson-cancelled",
+        LessonStatus.Held => "erudit-lesson erudit-lesson-held",
+        LessonStatus.NotHeld => "erudit-lesson erudit-lesson-notheld",
+        _ => "erudit-lesson",
+    };
+
+    private static string TimeRange(WeekLesson lesson) => $"{lesson.StartTime:H:mm}–{lesson.EndTime:H:mm}";
+
+    /// <summary>Подсказка при наведении: всё о занятии одной строкой.</summary>
+    private static string Tooltip(WeekLesson lesson) => string.Join("\n", new[]
+    {
+        $"{lesson.Subject}{(lesson.Topic is null ? "" : $": {lesson.Topic}")}",
+        $"{TimeRange(lesson)}, {lesson.Room}",
+        $"Записано {lesson.Enrolled} из {lesson.Capacity}",
+        lesson.IsSeries ? "Регулярное занятие" : "Разовое занятие",
+        LessonFormat.Status(lesson.Status),
+    });
+}

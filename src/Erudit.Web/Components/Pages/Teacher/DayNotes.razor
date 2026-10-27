@@ -1,0 +1,19 @@
+@* Пометки дня в сетке недели: нерабочий день и каникулы. *@
+@using Erudit.Domain.Lessons
+
+@if (!Day.IsWorking)
+{
+    <div class="erudit-day-note erudit-day-note-off">нерабочий день</div>
+}
+@if (Day.VacationAll is not null)
+{
+    <div class="erudit-day-note">@Day.VacationAll</div>
+}
+@if (Day.VacationPart is not null)
+{
+    <div class="erudit-day-note">@Day.VacationPart</div>
+}
+
+@code {
+    [Parameter, EditorRequired] public WeekDay Day { get; set; } = null!;
+}
