@@ -63,7 +63,7 @@ public sealed record RepeatEnd(string Label, DateOnly Date);
 ///  - в закрытом месяце создавать нельзя; задним числом — можно;
 ///  - учеников не больше, чем мест.
 /// </summary>
-public sealed class LessonService(EruditDbContext db, TimeProvider time)
+public sealed partial class LessonService(EruditDbContext db, TimeProvider time)
 {
     private static readonly CultureInfo Ru = CultureInfo.GetCultureInfo("ru-RU");
 
@@ -264,11 +264,18 @@ public sealed class LessonService(EruditDbContext db, TimeProvider time)
         {
             return [];
         }
-        var days = d.RepeatDays.ToHashSet();
+        return d.RepeatDays.Distinct()
+            .SelectMany(day => SkippedDates(day, d.Date, d.RepeatUntil!.Value, calendar))
+            .Order()
+            .ToList();
+    }
+
+    private static List<DateOnly> SkippedDates(DayOfWeek day, DateOnly from, DateOnly to, WorkingDayCalendar calendar)
+    {
         var result = new List<DateOnly>();
-        for (var date = d.Date; date <= d.RepeatUntil!.Value; date = date.AddDays(1))
+        for (var date = from; date <= to; date = date.AddDays(1))
         {
-            if (days.Contains(date.DayOfWeek) && !calendar.IsWorkingDay(date))
+            if (date.DayOfWeek == day && !calendar.IsWorkingDay(date))
             {
                 result.Add(date);
             }
@@ -303,9 +310,11 @@ public sealed class LessonService(EruditDbContext db, TimeProvider time)
         }
     }
 
-    private async Task CheckConflictsAsync(LessonDraft d, List<DateOnly> dates, List<string> errors, List<string> warnings,
-        CancellationToken ct)
+    /// <param name="exclude">Занятия, которые сейчас меняются, — сами с собой они не конфликтуют.</param>
+    private async Task CheckConflictsAsync(LessonDraft d, IReadOnlyList<DateOnly> dates, List<string> errors, List<string> warnings,
+        CancellationToken ct, IReadOnlyCollection<int>? exclude = null)
     {
+        exclude ??= [];
         var planned = dates.Select(x =>
         {
             var start = SchoolTime.ToUtc(x, d.StartTime);
@@ -317,7 +326,7 @@ public sealed class LessonService(EruditDbContext db, TimeProvider time)
 
         var existing = await db.Lessons
             .Where(l => l.Status != LessonStatus.Cancelled && l.StartsAt >= from && l.StartsAt < to
-                        && (l.TeacherId == d.TeacherId || l.RoomId == d.RoomId))
+                        && (l.TeacherId == d.TeacherId || l.RoomId == d.RoomId) && !exclude.Contains(l.Id))
             .Select(l => new
             {
                 l.StartsAt,

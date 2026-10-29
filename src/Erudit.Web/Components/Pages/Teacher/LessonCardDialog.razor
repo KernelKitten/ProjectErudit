@@ -1,0 +1,186 @@
+@* Карточка занятия: открывается кликом по занятию в сетке недели.
+   Кнопки: «Изменить» и «Отменить» — у запланированного, «Вернуть» — у отменённого.
+   Закрывается с результатом Ok(текст для снекбара), если что-то изменилось. *@
+@using Erudit.Domain.Lessons
+@using Erudit.Infrastructure.Lessons
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject LessonFormService FormService
+@inject IDialogService DialogService
+@inject TimeProvider Time
+
+<MudDialog>
+    <DialogContent>
+        @if (_lesson is null)
+        {
+            <MudProgressLinear Indeterminate />
+        }
+        else
+        {
+            <MudStack Spacing="1">
+                @* Предмет — здесь, а не в заголовке окна: заголовок MudBlazor не обновляется после загрузки данных. *@
+                <MudText Typo="Typo.h6">@_lesson.Subject@(_lesson.Topic is null ? "" : " · " + _lesson.Topic)</MudText>
+                <MudText>
+                    @_lesson.Date.ToString("dddd, d MMMM yyyy"),
+                    @(_lesson.LessonNumber is { } n ? $"{n} урок, " : "")@_lesson.Start.ToString("H:mm")–@_lesson.End.ToString("H:mm"),
+                    @_lesson.Room
+                </MudText>
+                <div>
+                    <MudChip T="string" Size="Size.Small" Color="LessonFormat.StatusColor(_lesson.Status)">@LessonFormat.Status(_lesson.Status)</MudChip>
+                    @if (_lesson.Status == LessonStatus.Cancelled && _lesson.CancelReason is not null)
+                    {
+                        <MudText Inline Typo="Typo.body2">Причина: @_lesson.CancelReason</MudText>
+                    }
+                </div>
+                @if (_lesson.Series is { } s)
+                {
+                    <MudText Typo="Typo.body2">
+                        <MudIcon Icon="@Icons.Material.Outlined.Repeat" Size="Size.Small" Style="vertical-align: -4px" />
+                        Регулярное: по @SeriesDay(s.Day), с @s.From.ToString("dd.MM") по @s.To.ToString("dd.MM.yyyy")
+                    </MudText>
+                }
+                @if (_lesson.Comment is not null)
+                {
+                    <MudText Typo="Typo.body2">Комментарий: @_lesson.Comment</MudText>
+                }
+
+                <MudText Typo="Typo.subtitle2" Class="mt-2">Записано @_lesson.Active.Count() из @_lesson.Capacity</MudText>
+                @if (_lesson.Students.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Учеников пока нет.</MudText>
+                }
+                @foreach (var st in _lesson.Students)
+                {
+                    <MudText Typo="Typo.body2" Style="@(st.Status == EnrollmentStatus.Active ? null : "color: #999")">
+                        @st.Student.Label@(st.Status switch
+                        {
+                            EnrollmentStatus.Declined => " — отказался",
+                            EnrollmentStatus.Removed => " — убран",
+                            _ => "",
+                        })
+                    </MudText>
+                }
+            </MudStack>
+
+            @foreach (var e in _errors)
+            {
+                <MudAlert Severity="Severity.Error" Dense Class="mt-3">@e</MudAlert>
+            }
+            @foreach (var w in _warnings)
+            {
+                <MudAlert Severity="Severity.Warning" Dense Class="mt-3">@w</MudAlert>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        @if (_lesson is not null && CanEdit)
+        {
+            @if (_lesson.Status == LessonStatus.Planned)
+            {
+                <MudButton Color="Color.Error" OnClick="CancelLessonAsync">Отменить занятие</MudButton>
+                <MudSpacer />
+                <MudButton OnClick="() => Dialog.Cancel()">Закрыть</MudButton>
+                <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="EditAsync">Изменить</MudButton>
+            }
+            else if (_lesson.Status == LessonStatus.Cancelled)
+            {
+                <MudButton OnClick="() => Dialog.Cancel()">Закрыть</MudButton>
+                <MudButton Color="@(_warnings.Count > 0 ? Color.Warning : Color.Primary)" Variant="Variant.Filled"
+                           OnClick="RestoreAsync" Disabled="_busy">@(_warnings.Count > 0 ? "Вернуть всё равно" : "Вернуть занятие")</MudButton>
+            }
+            else
+            {
+                <MudButton OnClick="() => Dialog.Cancel()">Закрыть</MudButton>
+            }
+        }
+        else
+        {
+            <MudButton OnClick="() => Dialog.Cancel()">Закрыть</MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+
+    [Parameter, EditorRequired] public int LessonId { get; set; }
+    /// <summary>Можно ли менять (учитель — в своей неделе).</summary>
+    [Parameter] public bool CanEdit { get; set; }
+    /// <summary>Окно на весь экран (телефон) — так же открываем и вложенные окна.</summary>
+    [Parameter] public bool FullScreen { get; set; }
+
+    private LessonDetails? _lesson;
+    private List<string> _errors = [];
+    private List<string> _warnings = [];
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync() => _lesson = await FormService.GetLessonAsync(LessonId);
+
+    private async Task EditAsync()
+    {
+        var parameters = new DialogParameters<NewLessonDialog>
+        {
+            { d => d.TeacherId, _lesson!.TeacherId },
+            { d => d.Date, _lesson.Date },
+            { d => d.LessonId, LessonId },
+        };
+        var dialog = await DialogService.ShowAsync<NewLessonDialog>("Изменить занятие", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, FullScreen = FullScreen, CloseButton = true });
+        if (await dialog.Result is { Canceled: false, Data: int changed })
+        {
+            Dialog.Close(DialogResult.Ok($"Изменено: {NewLessonDialog.Count(changed)}"));
+        }
+    }
+
+    private async Task CancelLessonAsync()
+    {
+        var parameters = new DialogParameters<CancelLessonDialog>
+        {
+            { d => d.LessonId, LessonId },
+            { d => d.IsSeries, _lesson!.Series is not null },
+        };
+        var dialog = await DialogService.ShowAsync<CancelLessonDialog>("Отменить занятие", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, FullScreen = FullScreen, CloseButton = true });
+        if (await dialog.Result is { Canceled: false, Data: int cancelled })
+        {
+            Dialog.Close(DialogResult.Ok($"Отменено: {NewLessonDialog.Count(cancelled)}"));
+        }
+    }
+
+    /// <summary>Вернуть отменённое: сначала проверка; предупреждения (кабинет занят) — второе нажатие.</summary>
+    private async Task RestoreAsync()
+    {
+        _busy = true;
+        try
+        {
+            var user = (await AuthState).User;
+            var actor = new LessonActor(user.GetPersonId() ?? 0, user.IsInRole(AppRoles.Admin) || user.IsInRole(AppRoles.HeadTeacher));
+            await using var db = await DbFactory.CreateForAsync(user);
+            var service = new LessonService(db, Time);
+            var confirmed = _warnings.Count > 0;
+            var check = await service.CheckRestoreAsync(LessonId, actor);
+            (_errors, _warnings) = (check.Errors.ToList(), check.Warnings.ToList());
+            if (!check.CanCreate || (check.Warnings.Count > 0 && !confirmed))
+            {
+                return;
+            }
+            await service.RestoreAsync(LessonId, actor, warningsConfirmed: true);
+            Dialog.Close(DialogResult.Ok("Занятие возвращено"));
+        }
+        catch (InvalidOperationException ex)
+        {
+            _errors = [ex.Message];
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>«по средам».</summary>
+    private static string SeriesDay(DayOfWeek day) => day switch
+    {
+        DayOfWeek.Monday => "понедельникам", DayOfWeek.Tuesday => "вторникам", DayOfWeek.Wednesday => "средам",
+        DayOfWeek.Thursday => "четвергам", DayOfWeek.Friday => "пятницам", DayOfWeek.Saturday => "субботам", _ => "воскресеньям",
+    };
+}

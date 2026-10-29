@@ -52,6 +52,7 @@ public class LessonConfiguration : IEntityTypeConfiguration<Lesson>
     {
         b.Property(l => l.Topic).HasMaxLength(200);
         b.Property(l => l.Comment).HasMaxLength(1000);
+        b.Property(l => l.CancelReason).HasMaxLength(300);
         b.HasOne(l => l.Series).WithMany(s => s.Lessons).HasForeignKey(l => l.SeriesId);
 
         // Самые частые запросы: «занятия учителя за период» и «занятия на сегодня».

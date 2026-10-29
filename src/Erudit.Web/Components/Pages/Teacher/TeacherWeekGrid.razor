@@ -65,7 +65,7 @@ else
                                 @onclick="() => empty ? NewLessonAsync(day.Date, p.Number) : Task.CompletedTask">
                                 @foreach (var lesson in cellLessons)
                                 {
-                                    <div class="@LessonClass(lesson)" title="@Tooltip(lesson)">
+                                    <div class="@LessonClass(lesson)" title="@Tooltip(lesson)" @onclick="() => OpenLessonAsync(lesson.Id)" @onclick:stopPropagation>
                                         <div class="erudit-lesson-subject">
                                             @if (lesson.IsSeries)
                                             {
@@ -105,7 +105,7 @@ else
                 }
                 @foreach (var lesson in lessons)
                 {
-                    <div class="@LessonClass(lesson)" title="@Tooltip(lesson)">
+                    <div class="@LessonClass(lesson)" title="@Tooltip(lesson)" @onclick="() => OpenLessonAsync(lesson.Id)" @onclick:stopPropagation>
                         <div class="erudit-lesson-meta">
                             @(lesson.LessonNumber is { } n ? $"{n} урок · " : "")@TimeRange(lesson)
                         </div>
@@ -158,6 +158,25 @@ else
     {
         _monday = TeacherWeekService.MondayOf(WeekService.Today);
         await LoadAsync();
+    }
+
+    /// <summary>Карточка занятия; изменили, отменили или вернули — сообщение и перезагрузка недели.</summary>
+    private async Task OpenLessonAsync(int lessonId)
+    {
+        var phone = await Viewport.GetCurrentBreakpointAsync() <= Breakpoint.Sm;
+        var parameters = new DialogParameters<LessonCardDialog>
+        {
+            { d => d.LessonId, lessonId },
+            { d => d.CanEdit, CanCreate },
+            { d => d.FullScreen, phone },
+        };
+        var dialog = await DialogService.ShowAsync<LessonCardDialog>("Занятие", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, FullScreen = phone, CloseButton = true });
+        if (await dialog.Result is { Canceled: false, Data: string message })
+        {
+            Snackbar.Add(message, Severity.Success);
+            await LoadAsync();
+        }
     }
 
     /// <summary>

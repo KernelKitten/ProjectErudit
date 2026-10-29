@@ -116,6 +116,14 @@
     overflow: hidden;
 }
 
+.erudit-lesson {
+    cursor: pointer;
+}
+
+.erudit-lesson:hover {
+    filter: brightness(0.95);
+}
+
 .erudit-lesson-subject {
     font-weight: 500;
     white-space: nowrap;

@@ -1,10 +1,12 @@
-@* Окно «Новое занятие». Открывается из сетки недели (клик по пустой клетке или кнопка «Новое занятие»).
-   Проверки и создание — LessonService (Infrastructure); окно только собирает LessonDraft и показывает результат.
-   Сам сохраняет и закрывается с результатом Ok(сколько занятий создано). *@
+@* Окно «Новое занятие» и «Изменить занятие» (параметр LessonId). Открывается из сетки недели
+   (клик по пустой клетке, кнопка «Новое занятие») или из карточки занятия («Изменить»).
+   Проверки и сохранение — LessonService (Infrastructure); окно только собирает LessonDraft и показывает результат.
+   Само сохраняет и закрывается с результатом Ok(сколько занятий создано или изменено). *@
 @using Erudit.Domain.Lessons
 @using Erudit.Infrastructure.Lessons
 @inject IDbContextFactory<EruditDbContext> DbFactory
 @inject LessonFormService FormService
+@inject IDialogService DialogService
 @inject TimeProvider Time
 
 <MudDialog>
@@ -35,7 +37,19 @@
                 }
             </MudStack>
 
-            <MudCheckBox T="bool" Value="_repeat" ValueChanged="RepeatChangedAsync" Label="Повторять каждую неделю" Dense Class="mt-2" />
+            @if (_editing is { Series: { } series })
+            {
+                @* Правка: повторение не меняем — при сохранении спросим «только это / это и все последующие». *@
+                <MudText Typo="Typo.body2" Class="mt-2">
+                    <MudIcon Icon="@Icons.Material.Outlined.Repeat" Size="Size.Small" Style="vertical-align: -4px" />
+                    Регулярное занятие (с @series.From.ToString("dd.MM") по @series.To.ToString("dd.MM.yyyy")) — при сохранении
+                    спросим, менять только это занятие или это и все последующие.
+                </MudText>
+            }
+            else if (_editing is null)
+            {
+                <MudCheckBox T="bool" Value="_repeat" ValueChanged="RepeatChangedAsync" Label="Повторять каждую неделю" Dense Class="mt-2" />
+            }
             @if (_repeat)
             {
                 <div class="ml-4">
@@ -152,6 +166,12 @@
     [Parameter, EditorRequired] public DateOnly Date { get; set; }
     /// <summary>Урок клетки, по которой кликнули; пусто — кнопка «Новое занятие».</summary>
     [Parameter] public int? LessonNumber { get; set; }
+    /// <summary>Какое занятие меняем; пусто — создаём новое.</summary>
+    [Parameter] public int? LessonId { get; set; }
+
+    private LessonDetails? _editing;
+    /// <summary>Для регулярного: что меняем — спрашиваем при сохранении.</summary>
+    private EditScope? _scope;
 
     private const int Manual = -1;
     private static readonly DayOfWeek[] WeekDays =
@@ -190,6 +210,11 @@
         _date = Date.ToDateTime(TimeOnly.MinValue);
         _days.Add(Date.DayOfWeek);
         _data = await FormService.LoadAsync(TeacherId, Date);
+        if (LessonId is { } id && await FormService.GetLessonAsync(id) is { } lesson)
+        {
+            Fill(lesson);
+            return;
+        }
         _subjectId = _data.LastSubjectId;
         _roomId = _data.LastRoomId;
         // Клик по клетке — её урок; кнопка «Новое занятие» — 8-й (доп. занятия обычно после уроков).
@@ -199,11 +224,30 @@
         _manualStart = _data.Periods.FirstOrDefault(p => p.Number == _period)?.Start.ToTimeSpan() ?? new TimeSpan(14, 0, 0);
     }
 
+    /// <summary>Правка: поля — из занятия. Время не совпадает со звонком урока — «вручную».</summary>
+    private void Fill(LessonDetails lesson)
+    {
+        _editing = lesson;
+        _date = lesson.Date.ToDateTime(TimeOnly.MinValue);
+        var period = _data!.Periods.FirstOrDefault(p => p.Number == lesson.LessonNumber);
+        _period = period is not null && period.Start == lesson.Start && period.DurationMinutes == lesson.DurationMinutes
+            ? period.Number : Manual;
+        _manualStart = lesson.Start.ToTimeSpan();
+        _manualMinutes = lesson.DurationMinutes;
+        _subjectId = lesson.SubjectId;
+        _roomId = lesson.RoomId;
+        _capacity = lesson.Capacity;
+        _topic = lesson.Topic;
+        _comment = lesson.Comment;
+        _selected.AddRange(lesson.Active);
+    }
+
     // ---------------------------------------------------------------- Поля формы
 
     /// <summary>Любое изменение формы: старая проверка больше не подходит.</summary>
     private void Changed()
     {
+        _scope = null;
         _check = null;
         _checkedKey = null;
         _error = null;
@@ -344,9 +388,9 @@
     private bool NeedsConfirmation => _check is { CanCreate: true } && _checkedKey is not null
                                       && (_check.Warnings.Count > 0 || _check.Dates.Count > 1);
 
-    private string CreateText => !NeedsConfirmation ? "Создать"
-        : _check!.Warnings.Count > 0 ? "Создать всё равно"
-        : $"Создать {Count(_check.Dates.Count)}";
+    private string CreateText => _editing is not null
+        ? (!NeedsConfirmation ? "Сохранить" : _check!.Warnings.Count > 0 ? "Сохранить всё равно" : $"Изменить {Count(_check.Dates.Count)}")
+        : (!NeedsConfirmation ? "Создать" : _check!.Warnings.Count > 0 ? "Создать всё равно" : $"Создать {Count(_check.Dates.Count)}");
 
     private async Task CreateAsync()
     {
@@ -365,6 +409,12 @@
             // Контекст «от имени» учителя: созданные занятия попадут в журнал изменений с его id.
             await using var db = await DbFactory.CreateForAsync(user);
             var service = new LessonService(db, Time);
+
+            if (_editing is not null)
+            {
+                await SaveChangesAsync(service, draft, actor);
+                return;
+            }
 
             var key = Key(draft);
             var confirmed = NeedsConfirmation && _checkedKey == key;
@@ -395,6 +445,39 @@
         }
     }
 
+    /// <summary>
+    /// Правка занятия. У регулярного сначала спрашиваем «только это / это и все последующие» (как в Google Календаре),
+    /// затем проверка; предупреждения или изменение нескольких занятий — показываем и ждём второго нажатия.
+    /// </summary>
+    private async Task SaveChangesAsync(LessonService service, LessonDraft draft, LessonActor actor)
+    {
+        if (_editing!.Series is not null && _scope is null)
+        {
+            var answer = await DialogService.ShowMessageBoxAsync("Изменить регулярное занятие",
+                "Изменить только это занятие или это и все последующие?",
+                yesText: "Только это", noText: "Это и все последующие", cancelText: "Отмена");
+            if (answer is null)
+            {
+                return;
+            }
+            _scope = answer.Value ? EditScope.OnlyThis : EditScope.ThisAndFollowing;
+        }
+        var scope = _scope ?? EditScope.OnlyThis;
+
+        var key = $"{scope}|{Key(draft)}";
+        if (!(NeedsConfirmation && _checkedKey == key))
+        {
+            _check = await service.CheckUpdateAsync(_editing.Id, draft, scope, actor);
+            if (!_check.CanCreate || _check.Warnings.Count > 0 || _check.Dates.Count > 1)
+            {
+                _checkedKey = _check.CanCreate ? key : null;
+                return;
+            }
+        }
+        var changed = await service.UpdateAsync(_editing.Id, draft, scope, actor, warningsConfirmed: true);
+        Dialog.Close(DialogResult.Ok(changed));
+    }
+
     // ---------------------------------------------------------------- Тексты
 
     private static string DayName(DayOfWeek day) => day switch
@@ -411,9 +494,16 @@
         return $"{n} {word}";
     }
 
-    private static string Summary(LessonCheck check)
+    private string Summary(LessonCheck check)
     {
-        var text = $"Будет создано {Count(check.Dates.Count)}: с {check.Dates[0]:dd.MM} по {check.Dates[^1]:dd.MM.yyyy}.";
+        var verb = _editing is null ? "создано" : "изменено";
+        var text = $"Будет {verb} {Count(check.Dates.Count)}: с {check.Dates[0]:dd.MM} по {check.Dates[^1]:dd.MM.yyyy}.";
+        if (_editing is not null && DateValue != _editing.Date)
+        {
+            // «Это и все последующие» с новой датой: прежние будущие занятия отменяются, по новому дню — новые.
+            text = $"Занятия переносятся на {DateValue.ToString("dddd")}: будет создано {Count(check.Dates.Count)} " +
+                   $"с {check.Dates[0]:dd.MM} по {check.Dates[^1]:dd.MM.yyyy}, прежние будущие занятия будут отменены.";
+        }
         if (check.SkippedDates.Count > 0)
         {
             text += $" Пропущены нерабочие дни: {string.Join(", ", check.SkippedDates.Select(d => d.ToString("dd.MM")))}.";

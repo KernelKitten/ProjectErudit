@@ -1,4 +1,5 @@
 using Erudit.Domain;
+using Erudit.Domain.Lessons;
 using Erudit.Domain.People;
 using Erudit.Domain.School;
 using Erudit.Infrastructure.Persistence;
@@ -25,6 +26,36 @@ public sealed record LessonFormData(
     IReadOnlyList<FormOption> Classes,
     int? LastSubjectId,
     int? LastRoomId);
+
+/// <summary>Серия, к которой относится занятие: «по средам с 07.09 по 25.12».</summary>
+public sealed record SeriesInfo(DayOfWeek Day, DateOnly From, DateOnly To);
+
+/// <summary>Ученик в занятии и его запись (записан / отказался / убран).</summary>
+public sealed record LessonStudent(StudentOption Student, EnrollmentStatus Status);
+
+/// <summary>Занятие целиком — для карточки и для формы изменения. Дата и время — по школьным часам.</summary>
+public sealed record LessonDetails(
+    int Id,
+    int TeacherId,
+    DateOnly Date,
+    TimeOnly Start,
+    int DurationMinutes,
+    int? LessonNumber,
+    int SubjectId,
+    string Subject,
+    int RoomId,
+    string Room,
+    int Capacity,
+    string? Topic,
+    string? Comment,
+    LessonStatus Status,
+    string? CancelReason,
+    SeriesInfo? Series,
+    IReadOnlyList<LessonStudent> Students)
+{
+    public TimeOnly End => Start.AddMinutes(DurationMinutes);
+    public IEnumerable<StudentOption> Active => Students.Where(s => s.Status == EnrollmentStatus.Active).Select(s => s.Student);
+}
 
 /// <summary>Данные для окна «Новое занятие»: справочники, классы и ученики.</summary>
 public sealed class LessonFormService(IDbContextFactory<EruditDbContext> dbFactory)
@@ -58,6 +89,41 @@ public sealed class LessonFormService(IDbContextFactory<EruditDbContext> dbFacto
         return new LessonFormData(periods, subjects, rooms, classes,
             subjects.Any(s => s.Id == last?.SubjectId) ? last!.SubjectId : null,
             rooms.Any(r => r.Id == last?.RoomId) ? last!.RoomId : null);
+    }
+
+    /// <summary>Занятие для карточки и формы изменения; нет такого — null.</summary>
+    public async Task<LessonDetails?> GetLessonAsync(int lessonId, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var l = await db.Lessons
+            .Include(x => x.Subject).Include(x => x.Room).Include(x => x.Series)
+            .Include(x => x.Enrollments).ThenInclude(e => e.Student)
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == lessonId, ct);
+        if (l is null)
+        {
+            return null;
+        }
+        var start = SchoolTime.ToSchool(l.StartsAt);
+        var date = DateOnly.FromDateTime(start);
+
+        var ids = l.Enrollments.Select(e => e.StudentId).ToList();
+        var classes = (await db.ClassMemberships
+                .Where(m => ids.Contains(m.StudentId) && m.FromDate <= date && (m.ToDate == null || m.ToDate >= date))
+                .Select(m => new { m.StudentId, m.SchoolClass.Grade, m.SchoolClass.Letter })
+                .ToListAsync(ct))
+            .DistinctBy(m => m.StudentId)
+            .ToDictionary(m => m.StudentId, m => $"{m.Grade}{m.Letter}");
+        var students = l.Enrollments
+            .OrderBy(e => e.Status).ThenBy(e => e.Student.LastName).ThenBy(e => e.Student.FirstName)
+            .Select(e => new LessonStudent(
+                new StudentOption(e.StudentId, $"{e.Student.LastName} {e.Student.FirstName}", classes.GetValueOrDefault(e.StudentId)),
+                e.Status))
+            .ToList();
+
+        return new LessonDetails(l.Id, l.TeacherId, date, TimeOnly.FromDateTime(start), l.DurationMinutes, l.LessonNumber,
+            l.SubjectId, l.Subject.Name, l.RoomId, l.Room.Name, l.Capacity, l.Topic, l.Comment, l.Status, l.CancelReason,
+            l.Series is { } s ? new SeriesInfo(s.DayOfWeek, s.FromDate, s.ToDate) : null, students);
     }
 
     /// <summary>Ученики класса на дату занятия, по алфавиту.</summary>

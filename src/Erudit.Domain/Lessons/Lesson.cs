@@ -49,6 +49,9 @@ public class Lesson
 
     public LessonStatus Status { get; set; } = LessonStatus.Planned;
 
+    /// <summary>Причина отмены («болезнь учителя») — для учеников; необязательна. Только у отменённых.</summary>
+    public string? CancelReason { get; set; }
+
     public List<Enrollment> Enrollments { get; set; } = [];
 
     /// <summary>Сколько минут идёт в отчёт: фактическая длительность, если указана, иначе плановая.</summary>

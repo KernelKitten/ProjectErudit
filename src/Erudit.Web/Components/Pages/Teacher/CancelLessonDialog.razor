@@ -1,0 +1,95 @@
+@* Отмена занятия: причина (необязательно) и — для регулярного — «только это» или «это и все последующие».
+   Для нескольких занятий сначала показываем, сколько и с какого по какое будет отменено, и ждём второго нажатия.
+   Закрывается с результатом Ok(сколько отменено). *@
+@using Erudit.Infrastructure.Lessons
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject TimeProvider Time
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="_reason" Label="Причина (необязательно)" MaxLength="300" Immediate
+                      HelperText="Её увидят ученики в уведомлении: «болезнь учителя», «олимпиада»" />
+        @if (_check is { CanCreate: true } && _check.Dates.Count > 1)
+        {
+            <MudAlert Severity="Severity.Warning" Dense Class="mt-3">
+                Будет отменено @NewLessonDialog.Count(_check.Dates.Count): с @_check.Dates[0].ToString("dd.MM") по @_check.Dates[^1].ToString("dd.MM.yyyy").
+                Регулярное занятие закончится накануне.
+            </MudAlert>
+        }
+        @foreach (var e in _check?.Errors ?? [])
+        {
+            <MudAlert Severity="Severity.Error" Dense Class="mt-3">@e</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Не отменять</MudButton>
+        @if (IsSeries)
+        {
+            <MudButton Color="Color.Error" Variant="Variant.Outlined" Disabled="_busy"
+                       OnClick="() => CancelAsync(EditScope.OnlyThis)">Только это занятие</MudButton>
+            <MudButton Color="Color.Error" Variant="Variant.Filled" Disabled="_busy"
+                       OnClick="() => CancelAsync(EditScope.ThisAndFollowing)">
+                @(_confirmFollowing ? $"Отменить {NewLessonDialog.Count(_check!.Dates.Count)}" : "Это и все последующие")
+            </MudButton>
+        }
+        else
+        {
+            <MudButton Color="Color.Error" Variant="Variant.Filled" Disabled="_busy"
+                       OnClick="() => CancelAsync(EditScope.OnlyThis)">Отменить занятие</MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+
+    [Parameter, EditorRequired] public int LessonId { get; set; }
+    [Parameter] public bool IsSeries { get; set; }
+
+    private string? _reason;
+    private LessonCheck? _check;
+    /// <summary>«Это и все последующие» уже проверено и показано — следующее нажатие отменяет.</summary>
+    private bool _confirmFollowing;
+    private bool _busy;
+
+    private async Task CancelAsync(EditScope scope)
+    {
+        _busy = true;
+        try
+        {
+            var user = (await AuthState).User;
+            var actor = new LessonActor(user.GetPersonId() ?? 0, user.IsInRole(AppRoles.Admin) || user.IsInRole(AppRoles.HeadTeacher));
+            // Контекст «от имени» учителя — отмена попадёт в журнал изменений с его id.
+            await using var db = await DbFactory.CreateForAsync(user);
+            var service = new LessonService(db, Time);
+
+            var confirmed = scope == EditScope.ThisAndFollowing && _confirmFollowing;
+            if (!confirmed)
+            {
+                _check = await service.CheckCancelAsync(LessonId, scope, actor);
+                _confirmFollowing = false;
+                if (!_check.CanCreate)
+                {
+                    return;
+                }
+                if (_check.Dates.Count > 1)
+                {
+                    _confirmFollowing = true; // показали «будет отменено N» — ждём второго нажатия
+                    return;
+                }
+            }
+            var count = await service.CancelAsync(LessonId, scope, _reason, actor);
+            Dialog.Close(DialogResult.Ok(count));
+        }
+        catch (InvalidOperationException ex)
+        {
+            _check = new LessonCheck([], [ex.Message], []);
+            _confirmFollowing = false;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

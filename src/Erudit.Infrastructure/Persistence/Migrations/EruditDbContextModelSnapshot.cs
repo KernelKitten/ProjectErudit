@@ -236,6 +236,11 @@ namespace Erudit.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("actual_duration_minutes");
 
+                    b.Property<string>("CancelReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("cancel_reason");
+
                     b.Property<int>("Capacity")
                         .HasColumnType("integer")
                         .HasColumnName("capacity");
