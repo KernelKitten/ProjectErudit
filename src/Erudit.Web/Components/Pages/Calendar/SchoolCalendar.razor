@@ -11,10 +11,7 @@
 <PageTitle>Календарь</PageTitle>
 
 <MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-2">
-    <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" OnClick="() => MoveAsync(-1)" aria-label="Назад" />
-    <MudText Typo="Typo.h5" Style="min-width: 220px; text-align: center">@Title</MudText>
-    <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" OnClick="() => MoveAsync(1)" aria-label="Вперёд" />
-    <MudButton Variant="Variant.Text" OnClick="TodayAsync">Сегодня</MudButton>
+    <PeriodNavigator Title="@Title" Large OnPrevious="() => MoveAsync(-1)" OnNext="() => MoveAsync(1)" OnToday="TodayAsync" />
     <MudToggleGroup T="CalendarView" Value="_view" ValueChanged="ChangeViewAsync" Size="Size.Small" Outlined Delimiters>
         <MudToggleItem Value="CalendarView.Month" Text="Месяц" />
         <MudToggleItem Value="CalendarView.Quarter" Text="Квартал" />

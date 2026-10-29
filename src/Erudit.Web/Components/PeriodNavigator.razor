@@ -1,0 +1,23 @@
+@* Листание периода: «‹ 26–30 октября 2026 › Сегодня». Общий для календаря и недели учителя.
+   На телефоне — на всю ширину строки: стрелки по краям, заголовок мельче по центру, кнопки «Сегодня» нет —
+   к сегодняшнему дню возвращает нажатие на заголовок. Остальные кнопки страницы уходят на следующую строку. *@
+
+<div class="erudit-period">
+    <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" OnClick="OnPrevious" aria-label="Назад" />
+    <div class="erudit-period-title @(Large ? "erudit-period-large" : null)" @onclick="OnToday" title="Вернуться к сегодняшнему дню">
+        @Title
+    </div>
+    <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" OnClick="OnNext" aria-label="Вперёд" />
+    <div class="erudit-period-today">
+        <MudButton Variant="Variant.Text" OnClick="OnToday">Сегодня</MudButton>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public EventCallback OnPrevious { get; set; }
+    [Parameter] public EventCallback OnNext { get; set; }
+    [Parameter] public EventCallback OnToday { get; set; }
+    /// <summary>Крупный заголовок (страница календаря) — на ноутбуке; на телефоне все одинаковые.</summary>
+    [Parameter] public bool Large { get; set; }
+}

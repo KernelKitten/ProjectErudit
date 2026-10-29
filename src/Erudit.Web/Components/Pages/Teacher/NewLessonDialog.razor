@@ -20,7 +20,11 @@
             @* ---------- Когда ---------- *@
             <MudText Typo="Typo.subtitle2" Class="mt-1">Когда</MudText>
             <MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Start">
-                <MudDatePicker Editable Date="_date" DateChanged="DateChangedAsync" Label="Дата" Style="max-width: 170px" />
+                @* Ширину полей даты и времени задаём обёрткой: Style самого поля MudBlazor переносит
+                   и на всплывающий календарь — он сжимается до ширины поля и обрезается. *@
+                <div style="width: 170px">
+                    <MudDatePicker Editable Date="_date" DateChanged="DateChangedAsync" Label="Дата" />
+                </div>
                 <MudSelect T="int" Value="_period" ValueChanged="PeriodChanged" Label="Урок" Style="min-width: 220px; max-width: 260px">
                     @foreach (var p in _data.Periods)
                     {
@@ -30,8 +34,9 @@
                 </MudSelect>
                 @if (_period == Manual)
                 {
-                    <MudTimePicker Editable Time="_manualStart" TimeChanged="t => { _manualStart = t; Changed(); }" Label="Начало"
-                                   Style="max-width: 120px" />
+                    <div style="width: 120px">
+                        <MudTimePicker Editable Time="_manualStart" TimeChanged="t => { _manualStart = t; Changed(); }" Label="Начало" />
+                    </div>
                     <MudNumericField T="int" Value="_manualMinutes" ValueChanged="m => { _manualMinutes = m; Changed(); }"
                                      Label="Минут" Min="5" Max="240" Step="5" Style="max-width: 110px" />
                 }
@@ -61,8 +66,9 @@
                         }
                     </MudStack>
                     <MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center">
-                        <MudDatePicker Editable Date="_until" DateChanged="d => { _until = d; Changed(); }" Label="До какой даты"
-                                       Style="max-width: 170px" />
+                        <div style="width: 170px">
+                            <MudDatePicker Editable Date="_until" DateChanged="d => { _until = d; Changed(); }" Label="До какой даты" />
+                        </div>
                         @foreach (var end in _repeatEnds)
                         {
                             <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="() => SetUntil(end.Date)">@end.Label</MudButton>

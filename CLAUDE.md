@@ -106,6 +106,8 @@
 - `PhoneNumber.Normalize` (Domain): любые записи номера → `+7XXXXXXXXXX`.
 - Страницы получают данные через `IDbContextFactory<EruditDbContext>` (контекст на одну операцию: в Blazor Server страница живёт долго).
 - MudBlazor 9: у `MudMenu` своя кнопка в `ActivatorContent` должна сама вызывать `menu.ToggleAsync`.
+- Листание периода — общий компонент `Components/PeriodNavigator.razor` (календарь и неделя учителя): «‹ заголовок › Сегодня»; на телефоне (уже 600 px) — на всю строку, стрелки по краям, заголовок 1rem, «Сегодня» скрыта, к сегодняшнему дню возвращает нажатие на заголовок.
+- MudBlazor 9: `Style` у `MudDatePicker`/`MudTimePicker` (например `max-width`) переносится и на всплывающий календарь — он сжимается до ширины поля и обрезается. Ширину таких полей задаём обёрткой `<div style="width: …">`.
 - Превью в браузере: `.claude/launch.json`, конфигурация `erudit-web` (порт 5067, без сборки — сначала `dotnet build`).
 - Тестовая база не удаляется, если уже есть: очищается схема `public` (так тесты работают даже при открытом pgAdmin).
 - Тесты бота — с поддельным `IMaxBotClient` (`tests/Erudit.Tests/Max/BotLoginTests.cs`); тестовый проект ссылается и на `Erudit.Web`.

@@ -1,0 +1,39 @@
+.erudit-period {
+    display: flex;
+    align-items: center;
+}
+
+.erudit-period-title {
+    font-size: 1.25rem;
+    font-weight: 500;
+    text-align: center;
+    white-space: nowrap;
+    cursor: pointer;
+    padding: 0 4px;
+}
+
+.erudit-period-large {
+    font-size: 1.5rem;
+    min-width: 220px;
+}
+
+/* Телефон: строка навигации на всю ширину, стрелки по краям, заголовок мельче, без «Сегодня». */
+@media (max-width: 599.98px) {
+    .erudit-period {
+        flex: 1 1 100%;
+        width: 100%;
+    }
+
+    .erudit-period-title,
+    .erudit-period-large {
+        flex: 1;
+        font-size: 1rem;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .erudit-period-today {
+        display: none;
+    }
+}

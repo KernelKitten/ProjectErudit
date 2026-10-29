@@ -8,10 +8,7 @@
 @inject IBrowserViewportService Viewport
 
 <MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-2">
-    <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" OnClick="() => MoveAsync(-7)" aria-label="Предыдущая неделя" />
-    <MudText Typo="Typo.h6" Style="text-align: center">@Title</MudText>
-    <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" OnClick="() => MoveAsync(7)" aria-label="Следующая неделя" />
-    <MudButton Variant="Variant.Text" OnClick="TodayAsync">Сегодня</MudButton>
+    <PeriodNavigator Title="@Title" OnPrevious="() => MoveAsync(-7)" OnNext="() => MoveAsync(7)" OnToday="TodayAsync" />
     @if (CanCreate)
     {
         <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
