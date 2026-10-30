@@ -68,6 +68,8 @@
             }
         </MudTd>
         <MudTd Style="text-align: right">
+            <MudIconButton Icon="@Icons.Material.Outlined.CalendarMonth" Size="Size.Small" aria-label="Расписание"
+                           Href="@($"schedule?teacher={context.Person.Id}")" title="Расписание" />
             <MudIconButton Icon="@Icons.Material.Outlined.Edit" Size="Size.Small" aria-label="Изменить"
                            OnClick="() => EditAsync(context.Person.Id)" />
         </MudTd>

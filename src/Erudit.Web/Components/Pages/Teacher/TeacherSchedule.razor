@@ -1,0 +1,80 @@
+@page "/schedule"
+@attribute [Authorize(Roles = AppRoles.DirectoryManagers)]
+@* Расписание любого учителя для завуча и администратора. Сетка та же, что у учителя (TeacherWeekGrid).
+   Выбранный учитель — в адресе (/schedule?teacher=12): страницу можно обновить или отправить ссылкой. *@
+@using Erudit.Infrastructure.Lessons
+@inject LessonFormService FormService
+@inject NavigationManager Navigation
+
+<PageTitle>Расписание учителей</PageTitle>
+
+<MudText Typo="Typo.h5" GutterBottom>Расписание учителей</MudText>
+
+<MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-2">
+    <div style="min-width: 280px; max-width: 420px; flex: 1">
+        <MudAutocomplete T="TeacherChoice" Value="_selected" ValueChanged="SelectAsync" Label="Учитель"
+                         SearchFunc="SearchAsync" MaxItems="null" />
+    </div>
+    <MudSwitch T="bool" @bind-Value="_showFired" Label="Показывать уволенных" Color="Color.Primary" />
+</MudStack>
+
+@if (_selected is { } teacher)
+{
+    @if (!teacher.IsActive)
+    {
+        <MudAlert Severity="Severity.Info" Dense Class="mb-2">Учитель уволился: новые занятия создавать нельзя, будущие можно отменить.</MudAlert>
+    }
+    <TeacherWeekGrid TeacherId="teacher.Id" CanCreate="teacher.IsActive" CanEdit />
+}
+else if (_teachers is not null)
+{
+    <MudAlert Severity="Severity.Info">@(TeacherFromAddress is null ? "Выберите учителя." : "Такой учитель не найден — выберите из списка.")</MudAlert>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+
+    [SupplyParameterFromQuery(Name = "teacher")] public int? TeacherFromAddress { get; set; }
+
+    private IReadOnlyList<TeacherChoice>? _teachers;
+    private TeacherChoice? _selected;
+    private bool _showFired;
+    private int? _me;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _me = (await AuthState).User.GetPersonId();
+        _teachers = await FormService.TeachersAsync();
+    }
+
+    /// <summary>Учитель из адреса; адрес пуст — сам пользователь, если он тоже работающий учитель.</summary>
+    protected override void OnParametersSet()
+    {
+        if (_teachers is null)
+        {
+            return;
+        }
+        _selected = TeacherFromAddress is { } id
+            ? _teachers.FirstOrDefault(t => t.Id == id)
+            : _teachers.FirstOrDefault(t => t.Id == _me && t.IsActive);
+        _showFired |= _selected is { IsActive: false };
+    }
+
+    private Task<IEnumerable<TeacherChoice>> SearchAsync(string? text, CancellationToken ct)
+    {
+        // Выбранный учитель уже в поле — показываем весь список, а не только его.
+        var query = text == _selected?.ToString() ? null : text;
+        return Task.FromResult((_teachers ?? [])
+            .Where(t => t.IsActive || _showFired)
+            .Where(t => TextSearch.Matches(t.Name, query)));
+    }
+
+    private Task SelectAsync(TeacherChoice? teacher)
+    {
+        if (teacher is not null)
+        {
+            Navigation.NavigateTo($"schedule?teacher={teacher.Id}", replace: true);
+        }
+        return Task.CompletedTask;
+    }
+}

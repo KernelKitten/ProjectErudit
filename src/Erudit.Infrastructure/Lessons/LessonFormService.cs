@@ -57,6 +57,12 @@ public sealed record LessonDetails(
     public IEnumerable<StudentOption> Active => Students.Where(s => s.Status == EnrollmentStatus.Active).Select(s => s.Student);
 }
 
+/// <summary>Учитель для выбора на странице «Расписание учителей».</summary>
+public sealed record TeacherChoice(int Id, string Name, bool IsActive)
+{
+    public override string ToString() => IsActive ? Name : $"{Name} (уволился)";
+}
+
 /// <summary>Данные для окна «Новое занятие»: справочники, классы и ученики.</summary>
 public sealed class LessonFormService(IDbContextFactory<EruditDbContext> dbFactory)
 {
@@ -89,6 +95,17 @@ public sealed class LessonFormService(IDbContextFactory<EruditDbContext> dbFacto
         return new LessonFormData(periods, subjects, rooms, classes,
             subjects.Any(s => s.Id == last?.SubjectId) ? last!.SubjectId : null,
             rooms.Any(r => r.Id == last?.RoomId) ? last!.RoomId : null);
+    }
+
+    /// <summary>Все учителя по алфавиту, включая уволенных (их прошлые занятия тоже бывает нужно посмотреть).</summary>
+    public async Task<IReadOnlyList<TeacherChoice>> TeachersAsync(CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await db.People
+            .Where(p => p.Roles.Any(r => r.Role == Role.Teacher))
+            .OrderBy(p => p.LastName).ThenBy(p => p.FirstName)
+            .Select(p => new TeacherChoice(p.Id, p.LastName + " " + p.FirstName + (p.MiddleName == null ? "" : " " + p.MiddleName), p.IsActive))
+            .ToListAsync(ct);
     }
 
     /// <summary>Занятие для карточки и формы изменения; нет такого — null.</summary>

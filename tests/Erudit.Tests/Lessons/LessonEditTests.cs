@@ -215,6 +215,51 @@ public class LessonEditTests(TestDatabase database)
     }
 
     [DatabaseFact]
+    public async Task Завуч__создаёт_и_меняет_за_учителя_а_в_журнале_автор_завуч()
+    {
+        var w = await CreateWorldAsync("Завуч");
+        var manager = new LessonActor(w.OtherTeacherId, IsManager: true);
+        var date = NextDay(DayOfWeek.Monday, new DateOnly(2063, 9, 1));
+
+        await using var db = database.CreateContext();
+        db.CurrentPersonId = w.OtherTeacherId;
+        Assert.Equal(1, await Service(db).CreateAsync(Draft(w, date), manager, warningsConfirmed: false));
+
+        var lesson = Assert.Single(await LessonsAsync(w));
+        Assert.Equal(w.TeacherId, lesson.TeacherId); // занятие — учителя
+
+        var draft = AsIs(w, lesson) with { RoomId = w.OtherRoomId };
+        Assert.Equal(1, await Service(db).UpdateAsync(lesson.Id, draft, EditScope.OnlyThis, manager, warningsConfirmed: false));
+
+        var id = lesson.Id.ToString();
+        var authors = await db.AuditEntries.Where(a => a.EntityType == nameof(Lesson) && a.EntityId == id)
+            .Select(a => a.PersonId).ToListAsync();
+        Assert.Equal(2, authors.Count); // создание и изменение
+        Assert.All(authors, a => Assert.Equal(w.OtherTeacherId, a)); // а автор — завуч
+    }
+
+    [DatabaseFact]
+    public async Task Уволенный_учитель__создать_нельзя_отменить_можно_и_он_в_списке()
+    {
+        var w = await CreateWorldAsync("Уволен");
+        var manager = new LessonActor(w.OtherTeacherId, IsManager: true);
+        var (_, lessons) = await CreateTuesdaysAsync(w, 2064);
+
+        await using var db = database.CreateContext();
+        var teacher = await db.People.SingleAsync(p => p.Id == w.TeacherId);
+        teacher.IsActive = false;
+        await db.SaveChangesAsync();
+
+        var free = NextDay(DayOfWeek.Monday, new DateOnly(2064, 9, 1));
+        Assert.Contains((await Service(db).CheckAsync(Draft(w, free), manager)).Errors, e => e.Contains("уволился"));
+        Assert.Equal(6, await Service(db).CancelAsync(lessons[0].Id, EditScope.ThisAndFollowing, "учитель уволился", manager));
+
+        var teachers = await new LessonFormService(database.CreateFactory()).TeachersAsync();
+        Assert.False(teachers.Single(t => t.Id == w.TeacherId).IsActive);
+        Assert.True(teachers.Single(t => t.Id == w.OtherTeacherId).IsActive);
+    }
+
+    [DatabaseFact]
     public async Task Нельзя__отмеченное_чужое_закрытый_месяц()
     {
         var w = await CreateWorldAsync("Нельзя");

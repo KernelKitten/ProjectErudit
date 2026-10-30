@@ -125,9 +125,13 @@ else
     /// <summary>Чью неделю показываем.</summary>
     [Parameter, EditorRequired] public int TeacherId { get; set; }
 
-    /// <summary>Можно ли создавать занятия (учитель — в своей неделе).</summary>
+    /// <summary>Можно ли создавать занятия: у уволенного учителя нельзя.</summary>
     [Parameter] public bool CanCreate { get; set; }
 
+    /// <summary>Можно ли менять и отменять занятия (у уволенного — можно: его будущие занятия надо отменить).</summary>
+    [Parameter] public bool CanEdit { get; set; }
+
+    private int? _loadedTeacherId;
     private DateOnly _monday;
     private bool _showAll;
     private TeacherWeek? _week;
@@ -140,7 +144,13 @@ else
         {
             _monday = TeacherWeekService.MondayOf(WeekService.Today);
         }
-        await LoadAsync();
+        // Перезагружаем, только если сменился учитель (неделя при этом остаётся та же):
+        // метод вызывается при каждой перерисовке родительской страницы.
+        if (_loadedTeacherId != TeacherId)
+        {
+            _loadedTeacherId = TeacherId;
+            await LoadAsync();
+        }
     }
 
     private async Task LoadAsync() => _week = await WeekService.LoadAsync(TeacherId, _monday);
@@ -164,7 +174,7 @@ else
         var parameters = new DialogParameters<LessonCardDialog>
         {
             { d => d.LessonId, lessonId },
-            { d => d.CanEdit, CanCreate },
+            { d => d.CanEdit, CanEdit },
             { d => d.FullScreen, phone },
         };
         var dialog = await DialogService.ShowAsync<LessonCardDialog>("Занятие", parameters,
