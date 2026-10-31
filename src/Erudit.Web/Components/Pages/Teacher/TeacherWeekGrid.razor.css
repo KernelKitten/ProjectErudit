@@ -1,6 +1,33 @@
 /* Сетка недели учителя (scoped CSS — действует только внутри TeacherWeekGrid).
    Цвета дней — как в календаре (MonthGrid): нерабочий — красноватый, каникулы — жёлтый. */
 
+/* Неотмеченные занятия над сеткой. */
+.erudit-unmarked {
+    border: 1px solid #e0a0a0;
+    border-radius: 6px;
+    background: #fdecea;
+    padding: 6px 10px;
+    margin-bottom: 8px;
+}
+
+.erudit-unmarked-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.erudit-unmarked-item {
+    padding: 4px 0 4px 26px;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.erudit-unmarked-item:hover {
+    text-decoration: underline;
+}
+
 .erudit-week-table {
     overflow-x: auto;
 }
@@ -143,6 +170,11 @@
     font-size: 0.9rem;
     vertical-align: -2px;
     opacity: 0.6;
+}
+
+.erudit-lesson-unmarked {
+    border-left-color: #c62828;
+    background: #fdecea;
 }
 
 .erudit-lesson-held {

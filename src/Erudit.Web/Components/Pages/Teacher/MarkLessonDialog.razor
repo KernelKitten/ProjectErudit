@@ -1,0 +1,95 @@
+@* Отметка занятия: «Проведено» (кто был, сколько длилось) или «Не состоялось».
+   По умолчанию все записанные присутствовали — учитель снимает галочки с отсутствующих.
+   При исправлении показывает прежнюю отметку. Закрывается с результатом Ok(текст для снекбара). *@
+@using Erudit.Domain.Lessons
+@using Erudit.Infrastructure.Lessons
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject TimeProvider Time
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-2">
+            @Lesson.Subject, @Lesson.Date.ToString("dddd, d MMMM"), @Lesson.Start.ToString("H:mm")–@Lesson.End.ToString("H:mm")
+        </MudText>
+
+        @if (_students.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary">На занятие никто не записан.</MudText>
+        }
+        else
+        {
+            <MudText Typo="Typo.subtitle2">Кто был на занятии: @(_students.Count - _absent.Count) из @_students.Count</MudText>
+            @foreach (var s in _students)
+            {
+                <MudCheckBox T="bool" Value="!_absent.Contains(s.Id)" ValueChanged="present => SetPresent(s.Id, present)"
+                             Label="@s.Label" Dense />
+            }
+        }
+
+        <div style="max-width: 200px" class="mt-3">
+            <MudNumericField T="int" @bind-Value="_minutes" Label="Сколько длилось, минут" Min="1" Max="LessonService.MaxActualMinutes"
+                             HelperText="@($"По плану: {Lesson.DurationMinutes}")" />
+        </div>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Color="Color.Warning" Disabled="_busy" OnClick="NotHeldAsync">Не состоялось</MudButton>
+        <MudSpacer />
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="_busy" OnClick="HeldAsync">Проведено</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+
+    [Parameter, EditorRequired] public LessonDetails Lesson { get; set; } = null!;
+
+    private List<StudentOption> _students = [];
+    private readonly HashSet<int> _absent = [];
+    private int _minutes;
+    private string? _error;
+    private bool _busy;
+
+    protected override void OnInitialized()
+    {
+        _students = Lesson.Active.ToList();
+        _absent.UnionWith(Lesson.Students.Where(s => s.Attendance == Attendance.Absent).Select(s => s.Student.Id));
+        _minutes = Lesson.ActualDurationMinutes ?? Lesson.DurationMinutes;
+    }
+
+    private void SetPresent(int studentId, bool present)
+    {
+        if (present) _absent.Remove(studentId); else _absent.Add(studentId);
+    }
+
+    private Task HeldAsync() => SaveAsync((service, actor) => service.MarkHeldAsync(Lesson.Id, _absent, _minutes, actor), "Занятие отмечено: проведено");
+
+    private Task NotHeldAsync() => SaveAsync((service, actor) => service.MarkNotHeldAsync(Lesson.Id, actor), "Занятие отмечено: не состоялось");
+
+    private async Task SaveAsync(Func<LessonService, LessonActor, Task> action, string message)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var user = (await AuthState).User;
+            var actor = new LessonActor(user.GetPersonId() ?? 0, user.IsInRole(AppRoles.Admin) || user.IsInRole(AppRoles.HeadTeacher));
+            await using var db = await DbFactory.CreateForAsync(user);
+            await action(new LessonService(db, Time), actor);
+            Dialog.Close(DialogResult.Ok(message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

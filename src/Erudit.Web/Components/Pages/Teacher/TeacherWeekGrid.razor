@@ -20,6 +20,27 @@
     </div>
 </MudStack>
 
+@if (CanEdit && _unmarked.Count > 0)
+{
+    @* Занятия прошли, а отметки нет: показываем все, а не только за эту неделю. *@
+    <div class="erudit-unmarked">
+        <div class="erudit-unmarked-head" @onclick="() => _showUnmarked = !_showUnmarked">
+            <MudIcon Icon="@Icons.Material.Outlined.ErrorOutline" Size="Size.Small" Color="Color.Error" />
+            <span>Не отмечено занятий: @_unmarked.Count</span>
+            <MudIcon Icon="@(_showUnmarked ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)" Size="Size.Small" />
+        </div>
+        @if (_showUnmarked)
+        {
+            @foreach (var u in _unmarked)
+            {
+                <div class="erudit-unmarked-item" @onclick="() => OpenLessonAsync(u.Id)">
+                    @u.Start.ToString("ddd dd.MM"), @u.Start.ToString("H:mm")–@u.Start.AddMinutes(u.DurationMinutes).ToString("H:mm"), @u.Subject
+                </div>
+            }
+        }
+    </div>
+}
+
 @if (_week is null)
 {
     <MudProgressLinear Indeterminate />
@@ -131,6 +152,8 @@ else
     /// <summary>Можно ли менять и отменять занятия (у уволенного — можно: его будущие занятия надо отменить).</summary>
     [Parameter] public bool CanEdit { get; set; }
 
+    private IReadOnlyList<UnmarkedLesson> _unmarked = [];
+    private bool _showUnmarked;
     private int? _loadedTeacherId;
     private DateOnly _monday;
     private bool _showAll;
@@ -153,7 +176,14 @@ else
         }
     }
 
-    private async Task LoadAsync() => _week = await WeekService.LoadAsync(TeacherId, _monday);
+    private async Task LoadAsync()
+    {
+        _week = await WeekService.LoadAsync(TeacherId, _monday);
+        if (CanEdit)
+        {
+            _unmarked = await WeekService.UnmarkedAsync(TeacherId);
+        }
+    }
 
     private async Task MoveAsync(int days)
     {
@@ -231,23 +261,28 @@ else
         day.IsToday ? "erudit-week-today" : null,
     }.Where(c => c is not null));
 
-    private static string LessonClass(WeekLesson lesson) => lesson.Status switch
+    /// <summary>Занятие закончилось, а отметки нет.</summary>
+    private bool IsUnmarked(WeekLesson lesson) =>
+        lesson.Status == LessonStatus.Planned && lesson.Start.AddMinutes(lesson.DurationMinutes) <= WeekService.Now;
+
+    private string LessonClass(WeekLesson lesson) => lesson.Status switch
     {
         LessonStatus.Cancelled => "erudit-lesson erudit-lesson-cancelled",
         LessonStatus.Held => "erudit-lesson erudit-lesson-held",
         LessonStatus.NotHeld => "erudit-lesson erudit-lesson-notheld",
+        _ when IsUnmarked(lesson) => "erudit-lesson erudit-lesson-unmarked",
         _ => "erudit-lesson",
     };
 
     private static string TimeRange(WeekLesson lesson) => $"{lesson.StartTime:H:mm}–{lesson.EndTime:H:mm}";
 
     /// <summary>Подсказка при наведении: всё о занятии одной строкой.</summary>
-    private static string Tooltip(WeekLesson lesson) => string.Join("\n", new[]
+    private string Tooltip(WeekLesson lesson) => string.Join("\n", new[]
     {
         $"{lesson.Subject}{(lesson.Topic is null ? "" : $": {lesson.Topic}")}",
         $"{TimeRange(lesson)}, {lesson.Room}",
         $"Записано {lesson.Enrolled} из {lesson.Capacity}",
         lesson.IsSeries ? "Регулярное занятие" : "Разовое занятие",
-        LessonFormat.Status(lesson.Status),
+        IsUnmarked(lesson) ? "Не отмечено" : LessonFormat.Status(lesson.Status),
     });
 }

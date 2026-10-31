@@ -30,8 +30,8 @@ public sealed record LessonFormData(
 /// <summary>Серия, к которой относится занятие: «по средам с 07.09 по 25.12».</summary>
 public sealed record SeriesInfo(DayOfWeek Day, DateOnly From, DateOnly To);
 
-/// <summary>Ученик в занятии и его запись (записан / отказался / убран).</summary>
-public sealed record LessonStudent(StudentOption Student, EnrollmentStatus Status);
+/// <summary>Ученик в занятии: его запись (записан / отказался / убран) и посещаемость.</summary>
+public sealed record LessonStudent(StudentOption Student, EnrollmentStatus Status, Attendance Attendance);
 
 /// <summary>Занятие целиком — для карточки и для формы изменения. Дата и время — по школьным часам.</summary>
 public sealed record LessonDetails(
@@ -40,6 +40,7 @@ public sealed record LessonDetails(
     DateOnly Date,
     TimeOnly Start,
     int DurationMinutes,
+    int? ActualDurationMinutes,
     int? LessonNumber,
     int SubjectId,
     string Subject,
@@ -135,10 +136,10 @@ public sealed class LessonFormService(IDbContextFactory<EruditDbContext> dbFacto
             .OrderBy(e => e.Status).ThenBy(e => e.Student.LastName).ThenBy(e => e.Student.FirstName)
             .Select(e => new LessonStudent(
                 new StudentOption(e.StudentId, $"{e.Student.LastName} {e.Student.FirstName}", classes.GetValueOrDefault(e.StudentId)),
-                e.Status))
+                e.Status, e.Attendance))
             .ToList();
 
-        return new LessonDetails(l.Id, l.TeacherId, date, TimeOnly.FromDateTime(start), l.DurationMinutes, l.LessonNumber,
+        return new LessonDetails(l.Id, l.TeacherId, date, TimeOnly.FromDateTime(start), l.DurationMinutes, l.ActualDurationMinutes, l.LessonNumber,
             l.SubjectId, l.Subject.Name, l.RoomId, l.Room.Name, l.Capacity, l.Topic, l.Comment, l.Status, l.CancelReason,
             l.Series is { } s ? new SeriesInfo(s.DayOfWeek, s.FromDate, s.ToDate) : null, students);
     }

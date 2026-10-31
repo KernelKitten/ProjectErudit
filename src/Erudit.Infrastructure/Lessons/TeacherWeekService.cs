@@ -6,6 +6,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Erudit.Infrastructure.Lessons;
 
+/// <summary>Занятие, которое закончилось, но не отмечено. Время — по школьным часам.</summary>
+public sealed record UnmarkedLesson(int Id, DateTime Start, int DurationMinutes, string Subject);
+
 /// <summary>
 /// Загружает неделю учителя для сетки: занятия, звонки, производственный календарь и каникулы.
 /// Раскладку по клеткам делает <see cref="TeacherWeek"/> (Domain).
@@ -14,6 +17,30 @@ public sealed class TeacherWeekService(IDbContextFactory<EruditDbContext> dbFact
 {
     /// <summary>Сегодня по школьным часам.</summary>
     public DateOnly Today => DateOnly.FromDateTime(SchoolTime.ToSchool(time.GetUtcNow().UtcDateTime));
+
+    /// <summary>Сейчас по школьным часам: занятие, закончившееся раньше, пора отметить.</summary>
+    public DateTime Now => SchoolTime.ToSchool(time.GetUtcNow().UtcDateTime);
+
+    /// <summary>
+    /// Неотмеченные занятия учителя: уже закончились, но всё ещё «запланированы», от старых к новым.
+    /// Занятия закрытых месяцев не показываем — отметить их всё равно нельзя.
+    /// </summary>
+    public async Task<IReadOnlyList<UnmarkedLesson>> UnmarkedAsync(int teacherId, CancellationToken ct = default)
+    {
+        var nowUtc = time.GetUtcNow().UtcDateTime;
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var closed = (await db.ClosedPeriods.Select(p => p.Month).ToListAsync(ct)).ToHashSet();
+        var lessons = await db.Lessons
+            .Where(l => l.TeacherId == teacherId && l.Status == LessonStatus.Planned && l.StartsAt < nowUtc)
+            .OrderBy(l => l.StartsAt)
+            .Select(l => new { l.Id, l.StartsAt, l.DurationMinutes, Subject = l.Subject.Name })
+            .ToListAsync(ct);
+        return lessons
+            .Where(l => l.StartsAt.AddMinutes(l.DurationMinutes) <= nowUtc)
+            .Select(l => new UnmarkedLesson(l.Id, SchoolTime.ToSchool(l.StartsAt), l.DurationMinutes, l.Subject))
+            .Where(l => !closed.Contains(new DateOnly(l.Start.Year, l.Start.Month, 1)))
+            .ToList();
+    }
 
     /// <summary>Понедельник недели, в которую входит дата.</summary>
     public static DateOnly MondayOf(DateOnly date) => date.AddDays(-(((int)date.DayOfWeek + 6) % 7));

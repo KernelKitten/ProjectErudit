@@ -31,6 +31,10 @@
                         <MudText Inline Typo="Typo.body2">Причина: @_lesson.CancelReason</MudText>
                     }
                 </div>
+                @if (_lesson.ActualDurationMinutes is { } actual)
+                {
+                    <MudText Typo="Typo.body2">Фактически длилось: @actual мин (по плану @_lesson.DurationMinutes)</MudText>
+                }
                 @if (_lesson.Series is { } s)
                 {
                     <MudText Typo="Typo.body2">
@@ -53,8 +57,10 @@
                     <MudText Typo="Typo.body2" Style="@(st.Status == EnrollmentStatus.Active ? null : "color: #999")">
                         @st.Student.Label@(st.Status switch
                         {
-                            EnrollmentStatus.Declined => " — отказался",
-                            EnrollmentStatus.Removed => " — убран",
+                            EnrollmentStatus.Declined => " — отказ",
+                            EnrollmentStatus.Removed => " — убран(а)",
+                            _ when st.Attendance == Attendance.Present => " — был(а)",
+                            _ when st.Attendance == Attendance.Absent => " — не был(а)",
                             _ => "",
                         })
                     </MudText>
@@ -78,8 +84,17 @@
             {
                 <MudButton Color="Color.Error" OnClick="CancelLessonAsync">Отменить занятие</MudButton>
                 <MudSpacer />
-                <MudButton OnClick="() => Dialog.Cancel()">Закрыть</MudButton>
-                <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="EditAsync">Изменить</MudButton>
+                <MudButton Variant="@(Started ? Variant.Text : Variant.Filled)" Color="Color.Primary" OnClick="EditAsync">Изменить</MudButton>
+                @if (Started)
+                {
+                    <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="MarkAsync">Отметить</MudButton>
+                }
+            }
+            else if (_lesson.Status is LessonStatus.Held or LessonStatus.NotHeld)
+            {
+                <MudButton Disabled="_busy" OnClick="UnmarkAsync">Снять отметку</MudButton>
+                <MudSpacer />
+                <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="MarkAsync">Исправить отметку</MudButton>
             }
             else if (_lesson.Status == LessonStatus.Cancelled)
             {
@@ -115,6 +130,41 @@
     private bool _busy;
 
     protected override async Task OnInitializedAsync() => _lesson = await FormService.GetLessonAsync(LessonId);
+
+    /// <summary>Отмечать можно с момента начала занятия.</summary>
+    private bool Started => SchoolTime.ToUtc(_lesson!.Date, _lesson.Start) <= Time.GetUtcNow().UtcDateTime;
+
+    private async Task MarkAsync()
+    {
+        var parameters = new DialogParameters<MarkLessonDialog> { { d => d.Lesson, _lesson! } };
+        var dialog = await DialogService.ShowAsync<MarkLessonDialog>("Отметить занятие", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, FullScreen = FullScreen, CloseButton = true });
+        if (await dialog.Result is { Canceled: false, Data: string message })
+        {
+            Dialog.Close(DialogResult.Ok(message));
+        }
+    }
+
+    private async Task UnmarkAsync()
+    {
+        _busy = true;
+        try
+        {
+            var user = (await AuthState).User;
+            var actor = new LessonActor(user.GetPersonId() ?? 0, user.IsInRole(AppRoles.Admin) || user.IsInRole(AppRoles.HeadTeacher));
+            await using var db = await DbFactory.CreateForAsync(user);
+            await new LessonService(db, Time).UnmarkAsync(LessonId, actor);
+            Dialog.Close(DialogResult.Ok("Отметка снята"));
+        }
+        catch (InvalidOperationException ex)
+        {
+            _errors = [ex.Message];
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
 
     private async Task EditAsync()
     {
