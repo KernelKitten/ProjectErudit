@@ -6,7 +6,8 @@
         @switch (role)
         {
             case AppRoles.Teacher:
-                <MudNavLink Href="teacher" Icon="@Icons.Material.Outlined.EventNote">Мои занятия</MudNavLink>
+                <MudNavLink Href="teacher" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.EventNote">Мои занятия</MudNavLink>
+                <MudNavLink Href="teacher/report" Icon="@Icons.Material.Outlined.Assessment">Отчёт за период</MudNavLink>
                 break;
             case AppRoles.ClassTeacher:
                 <MudNavLink Href="class-teacher" Icon="@Icons.Material.Outlined.Groups">Мои классы</MudNavLink>

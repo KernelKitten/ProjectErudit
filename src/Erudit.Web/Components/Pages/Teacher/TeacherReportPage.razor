@@ -1,0 +1,230 @@
+@page "/teacher/report"
+@attribute [Authorize(Roles = AppRoles.Teacher)]
+@* Отчёт учителя за период: итоги в академических часах, занятия, ученики, классы.
+   Подсчёт — Domain/Lessons/TeacherReport. Выгрузка в Excel — на этапе 7. *@
+@using Erudit.Domain.Lessons
+@using Erudit.Infrastructure.Lessons
+@inject TeacherReportService ReportService
+@inject IDialogService DialogService
+@inject IBrowserViewportService Viewport
+@inject ISnackbar Snackbar
+
+<PageTitle>Отчёт за период</PageTitle>
+
+<MudText Typo="Typo.h5" GutterBottom>Отчёт за период</MudText>
+
+<MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Start" Class="mb-3">
+    <MudSelect T="int" Value="_periodIndex" ValueChanged="PeriodChangedAsync" Label="Период" Style="min-width: 220px; max-width: 280px">
+        @for (var i = 0; i < _periods.Count; i++)
+        {
+            var index = i;
+            <MudSelectItem T="int" Value="index">@_periods[index].Label</MudSelectItem>
+        }
+        <MudSelectItem T="int" Value="Custom">Любые даты</MudSelectItem>
+    </MudSelect>
+    @if (_periodIndex == Custom)
+    {
+        @* Ширину полей даты задаём обёрткой: Style самого поля сжимает всплывающий календарь. *@
+        <div style="width: 170px">
+            <MudDatePicker Editable Date="_from" DateChanged="d => CustomChangedAsync(d, _to)" Label="С какого дня" />
+        </div>
+        <div style="width: 170px">
+            <MudDatePicker Editable Date="_to" DateChanged="d => CustomChangedAsync(_from, d)" Label="По какой день" />
+        </div>
+    }
+</MudStack>
+
+@if (_error is not null)
+{
+    <MudAlert Severity="Severity.Warning" Dense>@_error</MudAlert>
+}
+else if (_report is null)
+{
+    <MudProgressLinear Indeterminate />
+}
+else
+{
+    <MudPaper Outlined Class="pa-3 mb-3">
+        <MudText Typo="Typo.h6">Итого: @Hours(_report.TotalHours) ак. ч.</MudText>
+        <MudText Typo="Typo.body2" Class="mb-2">
+            Проведено: @_report.Held · не состоялось: @_report.NotHeld · отменено: @_report.Cancelled · впереди: @_report.Upcoming
+        </MudText>
+        @foreach (var kind in _report.Kinds)
+        {
+            <MudText>@KindName(kind.Kind): @NewLessonDialog.Count(kind.Lessons), @Hours(kind.Hours) ак. ч.</MudText>
+        }
+        <MudText Typo="Typo.caption" Style="color: #666">
+            В часы входят только проведённые занятия; 1 ак. ч. = @AcademicHours.MinutesPerHour минут, итог округлён до сотых.
+        </MudText>
+    </MudPaper>
+
+    @if (_report.Unmarked > 0)
+    {
+        <MudAlert Severity="Severity.Warning" Dense Class="mb-3">
+            Не отмечено: @NewLessonDialog.Count(_report.Unmarked). В часы они не вошли — нажмите на строку занятия, чтобы отметить.
+        </MudAlert>
+    }
+
+    <MudTabs Elevation="0" ApplyEffectsToContainer TabPanelsClass="pt-2">
+        <MudTabPanel Text="@($"Занятия: {_report.Lessons.Count}")">
+            <MudTable T="ReportLesson" Items="_report.Lessons" Dense Hover Breakpoint="Breakpoint.Sm" Elevation="0"
+                      OnRowClick="OpenLessonAsync" RowStyle="cursor: pointer">
+                <HeaderContent>
+                    <MudTh>Дата</MudTh>
+                    <MudTh>Время</MudTh>
+                    <MudTh>Предмет</MudTh>
+                    <MudTh>Вид</MudTh>
+                    <MudTh>Было</MudTh>
+                    <MudTh>Минут</MudTh>
+                    <MudTh>Ак. ч.</MudTh>
+                    <MudTh>Отметка</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Дата">@context.Date.ToString("ddd dd.MM")</MudTd>
+                    <MudTd DataLabel="Время">@(context.LessonNumber is { } n ? $"{n} ур., " : "")@context.Start.ToString("H:mm")</MudTd>
+                    <MudTd DataLabel="Предмет">@context.Subject</MudTd>
+                    <MudTd DataLabel="Вид">@KindName(context.Kind)</MudTd>
+                    <MudTd DataLabel="Было">@(context.Status == LessonStatus.Held ? $"{context.Students.Count(s => s.Attendance == Attendance.Present)} из {context.Students.Count}" : "—")</MudTd>
+                    <MudTd DataLabel="Минут">@(context.Status == LessonStatus.Held ? context.Minutes : "—")</MudTd>
+                    <MudTd DataLabel="Ак. ч.">@(context.Status == LessonStatus.Held ? Hours(AcademicHours.FromMinutes(context.Minutes)) : "—")</MudTd>
+                    <MudTd DataLabel="Отметка">
+                        @if (context.IsUnmarked)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error">Не отмечено</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="LessonFormat.StatusColor(context.Status)">@LessonFormat.Status(context.Status)</MudChip>
+                        }
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent><MudText>За этот период занятий нет.</MudText></NoRecordsContent>
+            </MudTable>
+        </MudTabPanel>
+
+        <MudTabPanel Text="@($"Ученики: {_report.Students.Count}")">
+            <MudTable T="ReportStudentRow" Items="_report.Students" Dense Hover Breakpoint="Breakpoint.Sm" Elevation="0">
+                <HeaderContent>
+                    <MudTh>Ученик</MudTh>
+                    <MudTh>Класс</MudTh>
+                    <MudTh>Был(а)</MudTh>
+                    <MudTh>Не был(а)</MudTh>
+                    <MudTh>Ак. ч.</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Ученик">@context.Name</MudTd>
+                    <MudTd DataLabel="Класс">@(context.ClassName ?? "—")</MudTd>
+                    <MudTd DataLabel="Был(а)">@context.Attended</MudTd>
+                    <MudTd DataLabel="Не был(а)">@context.Absent</MudTd>
+                    <MudTd DataLabel="Ак. ч.">@Hours(context.Hours)</MudTd>
+                </RowTemplate>
+                <NoRecordsContent><MudText>На проведённых занятиях учеников не было.</MudText></NoRecordsContent>
+            </MudTable>
+        </MudTabPanel>
+
+        <MudTabPanel Text="@($"Классы: {_report.Classes.Count}")">
+            <MudTable T="ReportClassRow" Items="_report.Classes" Dense Hover Breakpoint="Breakpoint.Sm" Elevation="0">
+                <HeaderContent>
+                    <MudTh>Класс</MudTh>
+                    <MudTh>Учеников</MudTh>
+                    <MudTh>Посещений</MudTh>
+                    <MudTh>Пропусков</MudTh>
+                    <MudTh>Ак. ч. учеников</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Класс">@(context.ClassName ?? "Без класса")</MudTd>
+                    <MudTd DataLabel="Учеников">@context.Students</MudTd>
+                    <MudTd DataLabel="Посещений">@context.Attended</MudTd>
+                    <MudTd DataLabel="Пропусков">@context.Absent</MudTd>
+                    <MudTd DataLabel="Ак. ч. учеников">@Hours(context.Hours)</MudTd>
+                </RowTemplate>
+                <NoRecordsContent><MudText>На проведённых занятиях учеников не было.</MudText></NoRecordsContent>
+            </MudTable>
+        </MudTabPanel>
+    </MudTabs>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+
+    private const int Custom = -1;
+
+    private int _teacherId;
+    private IReadOnlyList<ReportPeriod> _periods = [];
+    private int _periodIndex;
+    private DateTime? _from;
+    private DateTime? _to;
+    private TeacherReport? _report;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _teacherId = (await AuthState).User.GetPersonId() ?? 0;
+        _periods = await ReportService.PeriodsAsync();
+        // Период по умолчанию — текущий месяц (первый в списке).
+        var current = _periods[0];
+        (_from, _to) = (current.From.ToDateTime(TimeOnly.MinValue), current.To.ToDateTime(TimeOnly.MinValue));
+        await LoadAsync();
+    }
+
+    private async Task PeriodChangedAsync(int index)
+    {
+        _periodIndex = index;
+        if (index != Custom)
+        {
+            (_from, _to) = (_periods[index].From.ToDateTime(TimeOnly.MinValue), _periods[index].To.ToDateTime(TimeOnly.MinValue));
+        }
+        await LoadAsync();
+    }
+
+    private async Task CustomChangedAsync(DateTime? from, DateTime? to)
+    {
+        (_from, _to) = (from, to);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = _from is null || _to is null ? "Укажите обе даты."
+            : _from > _to ? "Начало периода позже конца."
+            : null;
+        if (_error is not null)
+        {
+            return;
+        }
+        _report = null;
+        _report = await ReportService.LoadAsync(_teacherId, DateOnly.FromDateTime(_from!.Value), DateOnly.FromDateTime(_to!.Value));
+    }
+
+    /// <summary>Клик по строке — карточка занятия: там его можно отметить; изменилось — пересчитываем отчёт.</summary>
+    private async Task OpenLessonAsync(TableRowClickEventArgs<ReportLesson> row)
+    {
+        if (row.Item is not { } lesson)
+        {
+            return;
+        }
+        var fullScreen = await Viewport.IsBreakpointWithinWindowSizeAsync(Breakpoint.Xs);
+        var parameters = new DialogParameters<LessonCardDialog>
+        {
+            { d => d.LessonId, lesson.Id },
+            { d => d.CanEdit, true },
+            { d => d.FullScreen, fullScreen },
+        };
+        var dialog = await DialogService.ShowAsync<LessonCardDialog>("Занятие", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, FullScreen = fullScreen, CloseButton = true });
+        if (await dialog.Result is { Canceled: false, Data: string message })
+        {
+            Snackbar.Add(message, Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private static string Hours(decimal hours) => hours.ToString("0.00");
+
+    private static string KindName(ReportLessonKind kind) => kind switch
+    {
+        ReportLessonKind.Individual => "Индивидуальные",
+        ReportLessonKind.Group => "Групповые",
+        _ => "Без учеников",
+    };
+}
