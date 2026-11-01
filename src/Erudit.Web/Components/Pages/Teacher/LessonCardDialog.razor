@@ -47,10 +47,12 @@
                     <MudText Typo="Typo.body2">Комментарий: @_lesson.Comment</MudText>
                 }
 
+                <MudText Typo="Typo.body2">@SignupText(_lesson)</MudText>
+
                 <MudText Typo="Typo.subtitle2" Class="mt-2">Записано @_lesson.Active.Count() из @_lesson.Capacity</MudText>
                 @if (_lesson.Students.Count == 0)
                 {
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">Учеников пока нет.</MudText>
+                    <MudText Typo="Typo.body2" Style="color: #666">Учеников пока нет.</MudText>
                 }
                 @foreach (var st in _lesson.Students)
                 {
@@ -226,6 +228,16 @@
             _busy = false;
         }
     }
+
+    private static string SignupText(LessonDetails l) => (l.SelfSignup, l.SignupGradeFrom, l.SignupGradeTo) switch
+    {
+        (false, _, _) => "Записывает только учитель",
+        (_, null, null) => "Ученики могут записываться сами",
+        (_, { } from, null) => $"Ученики могут записываться сами: с {from} класса",
+        (_, null, { } to) => $"Ученики могут записываться сами: по {to} класс",
+        (_, { } from, { } to) when from == to => $"Ученики могут записываться сами: {from} класс",
+        (_, { } from, { } to) => $"Ученики могут записываться сами: {from}–{to} классы",
+    };
 
     /// <summary>«по средам».</summary>
     private static string SeriesDay(DayOfWeek day) => day switch

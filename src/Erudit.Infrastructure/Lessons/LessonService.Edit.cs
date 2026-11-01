@@ -93,6 +93,9 @@ public sealed partial class LessonService
         target.Capacity = d.Capacity;
         target.Topic = Clean(d.Topic);
         target.Comment = Clean(d.Comment);
+        target.SelfSignup = d.SelfSignup;
+        target.SignupGradeFrom = d.SignupGradeFrom;
+        target.SignupGradeTo = d.SignupGradeTo;
         target.FromDate = d.Date;
 
         if (!plan.Regenerate)
@@ -168,6 +171,7 @@ public sealed partial class LessonService
         {
             errors.Add("Мест должно быть хотя бы одно.");
         }
+        CheckSignupGrades(d, errors);
         if (errors.Count > 0)
         {
             return Fail();
@@ -414,6 +418,9 @@ public sealed partial class LessonService
         l.Capacity = d.Capacity;
         l.Topic = Clean(d.Topic);
         l.Comment = Clean(d.Comment);
+        l.SelfSignup = d.SelfSignup;
+        l.SignupGradeFrom = d.SignupGradeFrom;
+        l.SignupGradeTo = d.SignupGradeTo;
     }
 
     /// <param name="reactivateDeclined">

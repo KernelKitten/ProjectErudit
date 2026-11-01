@@ -262,9 +262,21 @@ namespace Erudit.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("room_id");
 
+                    b.Property<bool>("SelfSignup")
+                        .HasColumnType("boolean")
+                        .HasColumnName("self_signup");
+
                     b.Property<int?>("SeriesId")
                         .HasColumnType("integer")
                         .HasColumnName("series_id");
+
+                    b.Property<int?>("SignupGradeFrom")
+                        .HasColumnType("integer")
+                        .HasColumnName("signup_grade_from");
+
+                    b.Property<int?>("SignupGradeTo")
+                        .HasColumnType("integer")
+                        .HasColumnName("signup_grade_to");
 
                     b.Property<DateTime>("StartsAt")
                         .HasColumnType("timestamp with time zone")
@@ -354,6 +366,18 @@ namespace Erudit.Infrastructure.Persistence.Migrations
                     b.Property<int>("RoomId")
                         .HasColumnType("integer")
                         .HasColumnName("room_id");
+
+                    b.Property<bool>("SelfSignup")
+                        .HasColumnType("boolean")
+                        .HasColumnName("self_signup");
+
+                    b.Property<int?>("SignupGradeFrom")
+                        .HasColumnType("integer")
+                        .HasColumnName("signup_grade_from");
+
+                    b.Property<int?>("SignupGradeTo")
+                        .HasColumnType("integer")
+                        .HasColumnName("signup_grade_to");
 
                     b.Property<TimeOnly>("StartTime")
                         .HasColumnType("time without time zone")

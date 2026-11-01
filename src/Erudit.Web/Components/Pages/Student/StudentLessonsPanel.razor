@@ -1,0 +1,222 @@
+@* Занятия одного ученика: «Мои занятия» (отказ) и «Записаться». Показывается и ученику, и родителю —
+   правила и права проверяет SignupService, панель только показывает и передаёт нажатия. *@
+@using Erudit.Domain.Lessons
+@using Erudit.Infrastructure.Lessons
+@using Erudit.Web.Components.Pages.Teacher
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject TimeProvider Time
+
+@if (_data is null)
+{
+    <MudProgressLinear Indeterminate />
+}
+else
+{
+    <MudTabs Elevation="0" ApplyEffectsToContainer TabPanelsClass="pt-3">
+        <MudTabPanel Text="@($"Записан(а): {_data.Mine.Count}")">
+            @if (_data.Mine.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info">За это время записей нет. Свободные занятия — на вкладке «Записаться».</MudAlert>
+            }
+            <MudStack Spacing="2">
+                @foreach (var l in _data.Mine)
+                {
+                    <MudPaper Class="pa-3" Outlined>
+                        @LessonInfo(l)
+                        @if (l.Status != LessonStatus.Planned)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="LessonFormat.StatusColor(l.Status)">@LessonFormat.Status(l.Status)</MudChip>
+                            @if (l.CancelReason is not null)
+                            {
+                                <MudText Inline Typo="Typo.body2">@l.CancelReason</MudText>
+                            }
+                        }
+                        @if (l.CanDecline)
+                        {
+                            <MudStack Row Wrap="Wrap.Wrap" Spacing="1" Class="mt-2">
+                                @if (l.HasFollowing)
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error" Disabled="_busy"
+                                               OnClick="() => DeclineAsync(l, EditScope.OnlyThis)">Отказаться от этого</MudButton>
+                                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error" Disabled="_busy"
+                                               OnClick="() => DeclineAsync(l, EditScope.ThisAndFollowing)">От всех следующих</MudButton>
+                                }
+                                else
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error" Disabled="_busy"
+                                               OnClick="() => DeclineAsync(l, EditScope.OnlyThis)">Отказаться</MudButton>
+                                }
+                            </MudStack>
+                        }
+                    </MudPaper>
+                }
+            </MudStack>
+        </MudTabPanel>
+
+        <MudTabPanel Text="@($"Записаться: {_data.Open.Count(o => o.Blocked is null)}")">
+            @if (_data.Open.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info">За это время занятий с открытой записью нет.</MudAlert>
+            }
+            else
+            {
+                <MudSelect T="string" @bind-Value="_subject" Label="Предмет" Clearable Placeholder="Все предметы"
+                           Class="mb-3" Style="max-width: 280px">
+                    @foreach (var subject in _data.Open.Select(o => o.Subject).Distinct().Order())
+                    {
+                        <MudSelectItem T="string" Value="subject">@subject</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+            <MudStack Spacing="2">
+                @foreach (var l in _data.Open.Where(o => _subject is null || o.Subject == _subject))
+                {
+                    <MudPaper Class="pa-3" Outlined>
+                        @LessonInfo(l)
+                        <MudText Typo="Typo.body2">Свободно мест: @Math.Max(0, l.Capacity - l.Enrolled) из @l.Capacity</MudText>
+                        @if (l.WasDeclined)
+                        {
+                            <MudText Typo="Typo.body2" Style="color: #666">Был отказ от этого занятия — можно записаться снова.</MudText>
+                        }
+                        @if (l.Blocked is not null)
+                        {
+                            <MudText Typo="Typo.body2" Color="Color.Warning" Class="mt-1">@l.Blocked</MudText>
+                        }
+                        else if (l.HasFollowing)
+                        {
+                            <MudStack Row Wrap="Wrap.Wrap" Spacing="1" Class="mt-2">
+                                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy"
+                                           OnClick="() => SignUpAsync(l, EditScope.OnlyThis)">Только на это</MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" Disabled="_busy"
+                                           OnClick="() => SignUpAsync(l, EditScope.ThisAndFollowing)">На все следующие</MudButton>
+                            </MudStack>
+                        }
+                        else
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" Class="mt-2"
+                                       OnClick="() => SignUpAsync(l, EditScope.OnlyThis)">Записаться</MudButton>
+                        }
+                    </MudPaper>
+                }
+            </MudStack>
+        </MudTabPanel>
+    </MudTabs>
+
+    <MudButton Variant="Variant.Text" Class="mt-3" OnClick="ShowMoreAsync">Показать ещё 2 недели</MudButton>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+
+    [Parameter, EditorRequired] public int StudentId { get; set; }
+
+    private StudentLessons? _data;
+    private string? _subject;
+    private int _weeks = 2;
+    private bool _busy;
+    private int _loadedFor;
+
+    /// <summary>Родитель переключил ребёнка — загружаем заново; у другого ребёнка свой фильтр и период.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor != StudentId)
+        {
+            _loadedFor = StudentId;
+            _data = null;
+            _subject = null;
+            _weeks = 2;
+            await LoadAsync();
+        }
+    }
+
+    private RenderFragment LessonInfo(SignupLesson l) =>
+        @<div>
+            <MudText Typo="Typo.subtitle1">
+                <b>@l.Date.ToString("ddd dd.MM")</b>, @(l.LessonNumber is { } n ? $"{n} урок, " : "")@l.Start.ToString("H:mm")–@l.End.ToString("H:mm")
+            </MudText>
+            <MudText>@l.Subject@(l.Topic is null ? "" : " · " + l.Topic) · @l.Teacher · @l.Room</MudText>
+            @if (l.IsSeries)
+            {
+                <MudText Typo="Typo.body2" Style="color: #666">
+                    <MudIcon Icon="@Icons.Material.Outlined.Repeat" Size="Size.Small" Style="vertical-align: -4px" /> Регулярное занятие
+                </MudText>
+            }
+            @if (l.Comment is not null)
+            {
+                <MudText Typo="Typo.body2">@l.Comment</MudText>
+            }
+        </div>;
+
+    private async Task LoadAsync()
+    {
+        var user = (await AuthState).User;
+        var from = LessonFormat.WeekStartUtc(Time.GetUtcNow().UtcDateTime);
+        await using var db = await DbFactory.CreateForAsync(user);
+        _data = await new SignupService(db, Time).LoadAsync(StudentId, user.GetPersonId() ?? 0, from, from.AddDays(7 * _weeks));
+        if (_subject is not null && _data.Open.All(o => o.Subject != _subject))
+        {
+            _subject = null;
+        }
+    }
+
+    private async Task ShowMoreAsync()
+    {
+        _weeks += 2;
+        await LoadAsync();
+    }
+
+    private async Task SignUpAsync(SignupLesson lesson, EditScope scope)
+    {
+        await RunAsync(async (service, actorId) =>
+        {
+            var result = await service.SignUpAsync(lesson.Id, StudentId, scope, actorId);
+            Snackbar.Add($"Запись на {NewLessonDialog.Count(result.Count)}", Severity.Success);
+            if (result.Skipped.Count > 0)
+            {
+                Snackbar.Add($"Не получилось: {string.Join(" ", result.Skipped)}", Severity.Warning);
+            }
+        });
+    }
+
+    private async Task DeclineAsync(SignupLesson lesson, EditScope scope)
+    {
+        var text = scope == EditScope.OnlyThis
+            ? $"Отказаться от занятия {lesson.Date:dd.MM} ({lesson.Subject})?"
+            : $"Отказаться от занятия {lesson.Date:dd.MM} ({lesson.Subject}) и всех следующих?";
+        if (await DialogService.ShowMessageBoxAsync("Отказ от занятия", text, yesText: "Отказаться", cancelText: "Нет") != true)
+        {
+            return;
+        }
+        await RunAsync(async (service, actorId) =>
+        {
+            var count = await service.DeclineAsync(lesson.Id, StudentId, scope, actorId);
+            Snackbar.Add($"Отказ: {NewLessonDialog.Count(count)}", Severity.Success);
+        });
+    }
+
+    /// <summary>
+    /// Запись и отказ на контексте «от имени» пользователя (журнал с автором). Отказ сервиса (место только что заняли) —
+    /// показываем причину и в любом случае обновляем список.
+    /// </summary>
+    private async Task RunAsync(Func<SignupService, int, Task> action)
+    {
+        _busy = true;
+        try
+        {
+            var user = (await AuthState).User;
+            await using var db = await DbFactory.CreateForAsync(user);
+            await action(new SignupService(db, Time), user.GetPersonId() ?? 0);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Warning);
+        }
+        finally
+        {
+            _busy = false;
+        }
+        await LoadAsync();
+    }
+}

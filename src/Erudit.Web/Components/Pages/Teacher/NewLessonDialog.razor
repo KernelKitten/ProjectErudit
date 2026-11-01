@@ -135,6 +135,29 @@
                 </div>
             }
 
+            @* ---------- Самозапись ---------- *@
+            <MudCheckBox T="bool" Value="_selfSignup" ValueChanged="on => { _selfSignup = on; Changed(); }"
+                         Label="Ученики могут записываться сами" Dense Class="mt-3" />
+            @if (_selfSignup)
+            {
+                <MudStack Row Wrap="Wrap.Wrap" Class="ml-4">
+                    <MudSelect T="int?" Value="_gradeFrom" ValueChanged="g => { _gradeFrom = g; Changed(); }" Label="С какого класса"
+                               Clearable Placeholder="любого" Style="max-width: 170px">
+                        @foreach (var grade in Grades)
+                        {
+                            <MudSelectItem T="int?" Value="grade">@grade</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudSelect T="int?" Value="_gradeTo" ValueChanged="g => { _gradeTo = g; Changed(); }" Label="По какой класс"
+                               Clearable Placeholder="любой" Style="max-width: 170px">
+                        @foreach (var grade in Grades)
+                        {
+                            <MudSelectItem T="int?" Value="grade">@grade</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudStack>
+            }
+
             @* ---------- Результат проверки ---------- *@
             @if (_check is not null)
             {
@@ -197,6 +220,10 @@
     private int _capacity = 1;
     private string? _topic;
     private string? _comment;
+    private static readonly int[] Grades = Enumerable.Range(1, 11).ToArray();
+    private bool _selfSignup = true;
+    private int? _gradeFrom;
+    private int? _gradeTo;
 
     private int? _classId;
     private IReadOnlyList<StudentOption> _classStudents = [];
@@ -245,6 +272,9 @@
         _capacity = lesson.Capacity;
         _topic = lesson.Topic;
         _comment = lesson.Comment;
+        _selfSignup = lesson.SelfSignup;
+        _gradeFrom = lesson.SignupGradeFrom;
+        _gradeTo = lesson.SignupGradeTo;
         _selected.AddRange(lesson.Active);
     }
 
@@ -382,13 +412,16 @@
             Topic = _topic,
             Comment = _comment,
             StudentIds = _selected.Select(s => s.Id).ToList(),
+            SelfSignup = _selfSignup,
+            SignupGradeFrom = _selfSignup ? _gradeFrom : null,
+            SignupGradeTo = _selfSignup ? _gradeTo : null,
         };
     }
 
     /// <summary>Ключ черновика — чтобы понять, что форма не менялась с последней проверки.</summary>
     private static string Key(LessonDraft d) => string.Join("|", d.SubjectId, d.RoomId, d.Date, string.Join(",", d.RepeatDays.Order()),
         d.RepeatUntil, d.LessonNumber, d.StartTime, d.DurationMinutes, d.Capacity, d.Topic, d.Comment,
-        string.Join(",", d.StudentIds.Order()));
+        string.Join(",", d.StudentIds.Order()), d.SelfSignup, d.SignupGradeFrom, d.SignupGradeTo);
 
     /// <summary>Проверка уже показана и ждёт подтверждения: предупреждения или «будет создано N занятий».</summary>
     private bool NeedsConfirmation => _check is { CanCreate: true } && _checkedKey is not null

@@ -52,7 +52,30 @@ public class Lesson
     /// <summary>Причина отмены («болезнь учителя») — для учеников; необязательна. Только у отменённых.</summary>
     public string? CancelReason { get; set; }
 
+    /// <summary>Ученики могут записываться сами (иначе записывает только учитель).</summary>
+    public bool SelfSignup { get; set; } = true;
+
+    /// <summary>Для каких параллелей открыта запись: с какой. Пусто — без ограничения снизу.</summary>
+    public int? SignupGradeFrom { get; set; }
+
+    /// <summary>По какую параллель открыта запись. Пусто — без ограничения сверху.</summary>
+    public int? SignupGradeTo { get; set; }
+
     public List<Enrollment> Enrollments { get; set; } = [];
+
+    /// <summary>Открыта ли самозапись для ученика этой параллели. Ученик без класса подходит только без ограничений.</summary>
+    public bool IsOpenForGrade(int? grade)
+    {
+        if (!SelfSignup)
+        {
+            return false;
+        }
+        if (SignupGradeFrom is null && SignupGradeTo is null)
+        {
+            return true;
+        }
+        return grade is { } g && (SignupGradeFrom is null || g >= SignupGradeFrom) && (SignupGradeTo is null || g <= SignupGradeTo);
+    }
 
     /// <summary>Сколько минут идёт в отчёт: фактическая длительность, если указана, иначе плановая.</summary>
     public int ReportedMinutes => ActualDurationMinutes ?? DurationMinutes;

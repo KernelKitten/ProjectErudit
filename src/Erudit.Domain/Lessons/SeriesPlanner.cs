@@ -49,6 +49,9 @@ public static class SeriesPlanner
                 Capacity = series.Capacity,
                 Topic = series.Topic,
                 Comment = series.Comment,
+                SelfSignup = series.SelfSignup,
+                SignupGradeFrom = series.SignupGradeFrom,
+                SignupGradeTo = series.SignupGradeTo,
             })
             .ToList();
 }

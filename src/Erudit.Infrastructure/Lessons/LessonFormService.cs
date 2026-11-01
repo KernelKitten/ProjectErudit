@@ -52,7 +52,10 @@ public sealed record LessonDetails(
     LessonStatus Status,
     string? CancelReason,
     SeriesInfo? Series,
-    IReadOnlyList<LessonStudent> Students)
+    IReadOnlyList<LessonStudent> Students,
+    bool SelfSignup,
+    int? SignupGradeFrom,
+    int? SignupGradeTo)
 {
     public TimeOnly End => Start.AddMinutes(DurationMinutes);
     public IEnumerable<StudentOption> Active => Students.Where(s => s.Status == EnrollmentStatus.Active).Select(s => s.Student);
@@ -141,7 +144,8 @@ public sealed class LessonFormService(IDbContextFactory<EruditDbContext> dbFacto
 
         return new LessonDetails(l.Id, l.TeacherId, date, TimeOnly.FromDateTime(start), l.DurationMinutes, l.ActualDurationMinutes, l.LessonNumber,
             l.SubjectId, l.Subject.Name, l.RoomId, l.Room.Name, l.Capacity, l.Topic, l.Comment, l.Status, l.CancelReason,
-            l.Series is { } s ? new SeriesInfo(s.DayOfWeek, s.FromDate, s.ToDate) : null, students);
+            l.Series is { } s ? new SeriesInfo(s.DayOfWeek, s.FromDate, s.ToDate) : null, students,
+            l.SelfSignup, l.SignupGradeFrom, l.SignupGradeTo);
     }
 
     /// <summary>Ученики класса на дату занятия, по алфавиту.</summary>

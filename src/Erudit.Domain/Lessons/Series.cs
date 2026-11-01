@@ -38,6 +38,11 @@ public class Series
     public DateOnly FromDate { get; set; }
     public DateOnly ToDate { get; set; }
 
+    /// <summary>Ученики могут записываться сами — переходит в занятия серии.</summary>
+    public bool SelfSignup { get; set; } = true;
+    public int? SignupGradeFrom { get; set; }
+    public int? SignupGradeTo { get; set; }
+
     public List<Lesson> Lessons { get; set; } = [];
 }
 

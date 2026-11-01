@@ -37,6 +37,11 @@ public sealed record LessonDraft
     public string? Comment { get; init; }
     public IReadOnlyList<int> StudentIds { get; init; } = [];
 
+    /// <summary>Ученики могут записываться сами; параллели — пусто значит без ограничения.</summary>
+    public bool SelfSignup { get; init; } = true;
+    public int? SignupGradeFrom { get; init; }
+    public int? SignupGradeTo { get; init; }
+
     public bool IsRepeating => RepeatDays.Count > 0;
 }
 
@@ -87,6 +92,7 @@ public sealed partial class LessonService(EruditDbContext db, TimeProvider time)
         {
             errors.Add("Мест должно быть хотя бы одно.");
         }
+        CheckSignupGrades(d, errors);
         var studentIds = d.StudentIds.Distinct().ToList();
         if (studentIds.Count > d.Capacity)
         {
@@ -184,6 +190,9 @@ public sealed partial class LessonService(EruditDbContext db, TimeProvider time)
                 Comment = Clean(d.Comment),
                 FromDate = d.Date,
                 ToDate = d.RepeatUntil.Value,
+                SelfSignup = d.SelfSignup,
+                SignupGradeFrom = d.SignupGradeFrom,
+                SignupGradeTo = d.SignupGradeTo,
             };
             var lessons = SeriesPlanner.CreateLessons(series, calendar);
             if (lessons.Count == 0)
@@ -242,6 +251,14 @@ public sealed partial class LessonService(EruditDbContext db, TimeProvider time)
     }
 
     // ---------------------------------------------------------------- Вспомогательное
+
+    private static void CheckSignupGrades(LessonDraft d, List<string> errors)
+    {
+        if (d.SignupGradeFrom > d.SignupGradeTo)
+        {
+            errors.Add("В записи «с какого класса» больше, чем «по какой класс».");
+        }
+    }
 
     /// <summary>Даты будущих занятий: разовое — сама дата; регулярное — по всем выбранным дням недели.</summary>
     private static List<DateOnly> PlanDates(LessonDraft d, WorkingDayCalendar calendar)
@@ -381,6 +398,9 @@ public sealed partial class LessonService(EruditDbContext db, TimeProvider time)
         Capacity = d.Capacity,
         Topic = Clean(d.Topic),
         Comment = Clean(d.Comment),
+        SelfSignup = d.SelfSignup,
+        SignupGradeFrom = d.SignupGradeFrom,
+        SignupGradeTo = d.SignupGradeTo,
     };
 
     private static string? Clean(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
