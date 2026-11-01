@@ -1,6 +1,8 @@
 using Erudit.Domain;
 using Erudit.Domain.Lessons;
+using Erudit.Domain.Notifications;
 using Erudit.Domain.People;
+using Erudit.Infrastructure.Notifications;
 using Erudit.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -143,6 +145,7 @@ public sealed class SignupService(EruditDbContext db, TimeProvider time)
 
         var count = 0;
         var skipped = new List<string>();
+        var changed = new List<Lesson>();
         foreach (var lesson in lessons)
         {
             var enrollment = lesson.Enrollments.FirstOrDefault(e => e.StudentId == studentId);
@@ -172,6 +175,7 @@ public sealed class SignupService(EruditDbContext db, TimeProvider time)
                 enrollment.Status = EnrollmentStatus.Active;
                 enrollment.Source = entrySource;
             }
+            changed.Add(lesson);
             count++;
         }
 
@@ -180,6 +184,7 @@ public sealed class SignupService(EruditDbContext db, TimeProvider time)
             db.SeriesEnrollments.Add(new SeriesEnrollment { SeriesId = target.SeriesId!.Value, StudentId = studentId, CreatedAt = now });
         }
 
+        await NotifyAsync(changed, studentId, actorId, NotificationText.Added, NotificationText.TeacherSignedUp, ct);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return new SignupResult(count, skipped);
@@ -210,6 +215,7 @@ public sealed class SignupService(EruditDbContext db, TimeProvider time)
         }
 
         enrollment.Status = EnrollmentStatus.Declined;
+        var changed = new List<Lesson> { lesson };
         var count = 1;
         if (scope == EditScope.ThisAndFollowing && lesson.SeriesId is { } seriesId)
         {
@@ -220,16 +226,51 @@ public sealed class SignupService(EruditDbContext db, TimeProvider time)
             foreach (var e in following.Where(e => !context.IsClosed(e.Lesson)))
             {
                 e.Status = EnrollmentStatus.Declined;
+                changed.Add(e.Lesson);
                 count++;
             }
             db.SeriesEnrollments.RemoveRange(await db.SeriesEnrollments
                 .Where(e => e.SeriesId == seriesId && e.StudentId == studentId).ToListAsync(ct));
         }
+        await NotifyAsync(changed, studentId, actorId, NotificationText.Removed, NotificationText.TeacherDeclined, ct);
         await db.SaveChangesAsync(ct);
         return count;
     }
 
     // ---------------------------------------------------------------- Вспомогательное
+
+    /// <summary>
+    /// Учителю — о записи или отказе; ученику и родителям с «Все уведомления» — тоже, кроме того, кто действовал сам.
+    /// Несколько занятий серии — одно сообщение.
+    /// </summary>
+    private async Task NotifyAsync(List<Lesson> lessons, int studentId, int actorId, Func<string, string> forStudent,
+        Func<string, string, string> forTeacher, CancellationToken ct)
+    {
+        if (lessons.Count == 0)
+        {
+            return;
+        }
+        var ordered = lessons.OrderBy(l => l.StartsAt).ToList();
+        var (first, last) = (ordered[0], ordered[^1]);
+        var notifications = new LessonNotifications(db, time.GetUtcNow().UtcDateTime, actorId);
+        var info = await notifications.InfoAsync(first.TeacherId, first.SubjectId, first.RoomId, first.StartsAt, first.DurationMinutes, first.LessonNumber, ct);
+        var description = NotificationText.DescribeSeries(info, SchoolDate(last), ordered.Count);
+
+        await notifications.ToStudentsAsync([studentId], forStudent(description), last.StartsAt, ct);
+        await notifications.ToPersonAsync(first.TeacherId, forTeacher(await StudentLabelAsync(studentId, info.Date, ct), description), last.StartsAt, ct);
+    }
+
+    /// <summary>«Иванов Пётр (7а)» — класс на дату занятия.</summary>
+    private async Task<string> StudentLabelAsync(int studentId, DateOnly date, CancellationToken ct)
+    {
+        var student = await db.People.AsNoTracking().SingleAsync(p => p.Id == studentId, ct);
+        var schoolClass = await db.ClassMemberships
+            .Where(m => m.StudentId == studentId && m.FromDate <= date && (m.ToDate == null || m.ToDate >= date))
+            .Select(m => new { m.SchoolClass.Grade, m.SchoolClass.Letter })
+            .FirstOrDefaultAsync(ct);
+        var name = $"{student.LastName} {student.FirstName}";
+        return schoolClass is null ? name : $"{name} ({schoolClass.Grade}{schoolClass.Letter})";
+    }
 
     private IQueryable<Lesson> QueryLessons() => db.Lessons.AsNoTracking()
         .Include(l => l.Subject).Include(l => l.Room).Include(l => l.Teacher).Include(l => l.Enrollments);

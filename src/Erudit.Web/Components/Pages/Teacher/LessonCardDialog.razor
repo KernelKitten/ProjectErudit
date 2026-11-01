@@ -39,7 +39,7 @@
                 {
                     <MudText Typo="Typo.body2">
                         <MudIcon Icon="@Icons.Material.Outlined.Repeat" Size="Size.Small" Style="vertical-align: -4px" />
-                        Регулярное: по @SeriesDay(s.Day), с @s.From.ToString("dd.MM") по @s.To.ToString("dd.MM.yyyy")
+                        Регулярное: по @Erudit.Domain.Notifications.NotificationText.SeriesDay(s.Day), с @s.From.ToString("dd.MM") по @s.To.ToString("dd.MM.yyyy")
                     </MudText>
                 }
                 @if (_lesson.Comment is not null)
@@ -237,12 +237,5 @@
         (_, null, { } to) => $"Ученики могут записываться сами: по {to} класс",
         (_, { } from, { } to) when from == to => $"Ученики могут записываться сами: {from} класс",
         (_, { } from, { } to) => $"Ученики могут записываться сами: {from}–{to} классы",
-    };
-
-    /// <summary>«по средам».</summary>
-    private static string SeriesDay(DayOfWeek day) => day switch
-    {
-        DayOfWeek.Monday => "понедельникам", DayOfWeek.Tuesday => "вторникам", DayOfWeek.Wednesday => "средам",
-        DayOfWeek.Thursday => "четвергам", DayOfWeek.Friday => "пятницам", DayOfWeek.Saturday => "субботам", _ => "воскресеньям",
     };
 }

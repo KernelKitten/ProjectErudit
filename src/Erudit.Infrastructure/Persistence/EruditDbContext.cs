@@ -1,6 +1,7 @@
 using Erudit.Domain.Accounting;
 using Erudit.Domain.Calendar;
 using Erudit.Domain.Lessons;
+using Erudit.Domain.Notifications;
 using Erudit.Domain.People;
 using Erudit.Domain.School;
 using System.Text.Json;
@@ -38,6 +39,8 @@ public class EruditDbContext(DbContextOptions<EruditDbContext> options) : DbCont
 
     public DbSet<ClosedPeriod> ClosedPeriods => Set<ClosedPeriod>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+
+    public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -77,7 +80,7 @@ public class EruditDbContext(DbContextOptions<EruditDbContext> options) : DbCont
 
         var changes = ChangeTracker.Entries()
             .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted
-                && e.Entity is not AuditEntry and not LoginRequest)
+                && e.Entity is not AuditEntry and not LoginRequest and not Notification)
             .Select(e => (Entry: e, Action: e.State.ToString(), Fields: DescribeChanges(e)))
             .ToList();
         if (changes.Count == 0)

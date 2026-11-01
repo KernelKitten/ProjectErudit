@@ -46,14 +46,25 @@ public sealed partial class LessonService
         ThrowIfCannot(plan.Check, warningsConfirmed);
         var lesson = plan.Lesson!;
         var now = time.GetUtcNow().UtcDateTime;
+        var notifications = Notifications(actor);
+        // Что было до изменения — нужно для сообщений «Было / Стало»; считаем, пока занятия не изменились.
+        var infoBefore = await InfoAsync(notifications, lesson, ct);
 
         if (plan.Scope == EditScope.OnlyThis)
         {
+            var studentsBefore = ActiveOnFuture([lesson]);
+            var setBefore = await DescribeFutureAsync(notifications, [lesson], ct);
             Apply(lesson, d, d.Date);
             ApplyStudents(lesson, plan.Added, plan.Removed, EnrollmentSource.Teacher, now, reactivateDeclined: true);
+            var infoAfter = await InfoAsync(notifications, lesson, ct);
+            await NotifyChangedAsync(notifications, setBefore, await DescribeFutureAsync(notifications, [lesson], ct), infoAfter != infoBefore,
+                studentsBefore, ActiveOnFuture([lesson]), lesson.TeacherId, actor, ct);
             await db.SaveChangesAsync(ct);
             return 1;
         }
+
+        var seriesStudentsBefore = ActiveOnFuture(plan.Affected);
+        var seriesBefore = await DescribeFutureAsync(notifications, plan.Affected, ct);
 
         // ---- Это и все последующие.
         var old = plan.Series!;
@@ -106,6 +117,10 @@ public sealed partial class LessonService
                 Apply(l, d, SchoolDate(l.StartsAt));
                 ApplyStudents(l, plan.Added, plan.Removed, EnrollmentSource.Series, now, reactivateDeclined: l.Id == lesson.Id);
             }
+            // Дата занятия здесь та же, поэтому сравнение покажет только настоящие изменения.
+            var infoAfter = await InfoAsync(notifications, lesson, ct);
+            await NotifyChangedAsync(notifications, seriesBefore, await DescribeFutureAsync(notifications, plan.Affected, ct), infoAfter != infoBefore,
+                seriesStudentsBefore, ActiveOnFuture(plan.Affected), lesson.TeacherId, actor, ct);
             await db.SaveChangesAsync(ct);
             return plan.Affected.Count;
         }
@@ -125,6 +140,8 @@ public sealed partial class LessonService
             }
             db.Lessons.Add(l);
         }
+        await NotifyChangedAsync(notifications, seriesBefore, await DescribeFutureAsync(notifications, created, ct), important: true,
+            seriesStudentsBefore, ActiveOnFuture(created), lesson.TeacherId, actor, ct);
         await db.SaveChangesAsync(ct); // всё — одной транзакцией
         return created.Count;
     }
@@ -296,6 +313,7 @@ public sealed partial class LessonService
         {
             series.ToDate = original.AddDays(-1);
         }
+        await NotifyCancelledAsync(lessons, Clean(reason), actor, ct);
         await db.SaveChangesAsync(ct);
         return lessons.Count;
     }
@@ -340,6 +358,7 @@ public sealed partial class LessonService
         ThrowIfCannot(check, warningsConfirmed);
         lesson!.Status = LessonStatus.Planned;
         lesson.CancelReason = null;
+        await NotifyRestoredAsync(lesson, actor, ct);
         await db.SaveChangesAsync(ct);
     }
 

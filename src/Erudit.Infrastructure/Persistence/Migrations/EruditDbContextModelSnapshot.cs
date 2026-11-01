@@ -456,6 +456,69 @@ namespace Erudit.Infrastructure.Persistence.Migrations
                     b.ToTable("series_enrollments", (string)null);
                 });
 
+            modelBuilder.Entity("Erudit.Domain.Notifications.Notification", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("last_error");
+
+                    b.Property<DateTime>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_attempt_at");
+
+                    b.Property<int>("RecipientId")
+                        .HasColumnType("integer")
+                        .HasColumnName("recipient_id");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sent_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("text");
+
+                    b.HasKey("Id")
+                        .HasName("pk_notifications");
+
+                    b.HasIndex("NextAttemptAt")
+                        .HasDatabaseName("ix_notifications_next_attempt_at")
+                        .HasFilter("status = 'Pending'");
+
+                    b.HasIndex("RecipientId")
+                        .HasDatabaseName("ix_notifications_recipient_id");
+
+                    b.ToTable("notifications", (string)null);
+                });
+
             modelBuilder.Entity("Erudit.Domain.People.LoginRequest", b =>
                 {
                     b.Property<int>("Id")
@@ -999,6 +1062,18 @@ namespace Erudit.Infrastructure.Persistence.Migrations
                     b.Navigation("Series");
 
                     b.Navigation("Student");
+                });
+
+            modelBuilder.Entity("Erudit.Domain.Notifications.Notification", b =>
+                {
+                    b.HasOne("Erudit.Domain.People.Person", "Recipient")
+                        .WithMany()
+                        .HasForeignKey("RecipientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_notifications_people_recipient_id");
+
+                    b.Navigation("Recipient");
                 });
 
             modelBuilder.Entity("Erudit.Domain.People.LoginRequest", b =>

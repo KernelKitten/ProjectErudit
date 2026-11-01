@@ -1,0 +1,18 @@
+using Erudit.Domain.Notifications;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace Erudit.Infrastructure.Persistence.Configurations;
+
+public class NotificationConfiguration : IEntityTypeConfiguration<Notification>
+{
+    public void Configure(EntityTypeBuilder<Notification> b)
+    {
+        // Предел длины сообщения в MAX — 4000 символов.
+        b.Property(n => n.Text).HasMaxLength(4000);
+        b.Property(n => n.LastError).HasMaxLength(300);
+        // Служба отправки каждые несколько секунд ищет ждущие сообщения; отправленных будет намного больше.
+        b.HasIndex(n => n.NextAttemptAt).HasFilter("status = 'Pending'");
+        b.HasIndex(n => n.RecipientId);
+    }
+}

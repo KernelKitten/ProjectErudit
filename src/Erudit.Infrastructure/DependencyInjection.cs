@@ -88,6 +88,8 @@ public static class DependencyInjection
         services.AddScoped<Lessons.LessonFormService>();
         services.AddScoped<Lessons.TeacherReportService>();
         services.AddScoped<SchoolYearReminderJob>();
+        services.AddScoped<Notifications.NotificationSender>();
+        services.AddHostedService<Notifications.NotificationSenderService>();
         services.AddOptions<SiteOptions>().Bind(configuration.GetSection(SiteOptions.SectionName));
         services.AddSingleton<LoginRequestService>();
 

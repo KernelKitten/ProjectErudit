@@ -168,12 +168,14 @@ public sealed partial class LessonService(EruditDbContext db, TimeProvider time)
                 lesson.Enrollments.Add(new Enrollment { StudentId = id, Source = EnrollmentSource.Teacher, CreatedAt = now });
             }
             db.Lessons.Add(lesson);
+            await NotifyCreatedAsync([[lesson]], studentIds, d.TeacherId, actor, ct);
             await db.SaveChangesAsync(ct);
             return 1;
         }
 
         var calendar = await LoadCalendarAsync(d.Date, d.RepeatUntil!.Value, ct);
         var created = 0;
+        var groups = new List<IReadOnlyList<Lesson>>();
         foreach (var day in d.RepeatDays.Distinct().OrderBy(x => ((int)x + 6) % 7)) // с понедельника
         {
             var series = new Series
@@ -213,8 +215,10 @@ public sealed partial class LessonService(EruditDbContext db, TimeProvider time)
                 db.Lessons.Add(lesson);
             }
             created += lessons.Count;
+            groups.Add(lessons);
         }
 
+        await NotifyCreatedAsync(groups, studentIds, d.TeacherId, actor, ct);
         await db.SaveChangesAsync(ct); // все серии и занятия — одной транзакцией
         return created;
     }
