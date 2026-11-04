@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Erudit.Domain.People;
 
 namespace Erudit.Domain.Notifications;
@@ -8,6 +9,16 @@ public enum NotificationStatus
     Sent = 2,    // отправлено
     Failed = 3,  // не удалось после всех попыток
     Expired = 4, // устарело раньше, чем удалось отправить (занятие уже началось)
+}
+
+/// <summary>Кнопка под сообщением: надпись и payload — что бот получит при нажатии (например, «skip:12:345»).</summary>
+public sealed record NotificationButton(string Text, string Payload)
+{
+    public static string? ToJson(IReadOnlyCollection<NotificationButton> buttons) =>
+        buttons.Count == 0 ? null : JsonSerializer.Serialize(buttons);
+
+    public static IReadOnlyList<NotificationButton> FromJson(string? json) =>
+        json is null ? [] : JsonSerializer.Deserialize<List<NotificationButton>>(json) ?? [];
 }
 
 /// <summary>
@@ -29,6 +40,9 @@ public class Notification
     /// Уникальный: ежеминутная задача не поставит одно и то же напоминание второй раз. У мгновенных — пусто.
     /// </summary>
     public string? Key { get; set; }
+
+    /// <summary>Кнопки под сообщением (JSON, по одной в ряд) — см. <see cref="NotificationButton"/>. Пусто — без кнопок.</summary>
+    public string? Buttons { get; set; }
 
     public NotificationStatus Status { get; set; } = NotificationStatus.Pending;
 

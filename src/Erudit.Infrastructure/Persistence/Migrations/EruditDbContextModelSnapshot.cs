@@ -469,6 +469,11 @@ namespace Erudit.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("attempts");
 
+                    b.Property<string>("Buttons")
+                        .HasMaxLength(200)
+                        .HasColumnType("jsonb")
+                        .HasColumnName("buttons");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");

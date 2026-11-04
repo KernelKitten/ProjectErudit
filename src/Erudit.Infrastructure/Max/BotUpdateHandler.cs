@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Erudit.Domain.Accounting;
 using Erudit.Domain.People;
 using Erudit.Infrastructure.Auth;
+using Erudit.Infrastructure.Notifications;
 using Erudit.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -47,10 +48,17 @@ public sealed class BotUpdateHandler(
             // Нажал кнопку под сообщением бота
             case "message_callback":
                 var callback = update["callback"]!;
+                var payload = callback["payload"]?.GetValue<string>() ?? "";
+                if (LessonButtons.IsLessonPayload(payload))
+                {
+                    await OnLessonButtonAsync(callback["user"]!["user_id"]!.GetValue<long>(),
+                        callback["callback_id"]!.GetValue<string>(), payload, update["message"] as JsonObject, ct);
+                    break;
+                }
                 await OnCallbackAsync(
                     callback["user"]!["user_id"]!.GetValue<long>(),
                     callback["callback_id"]!.GetValue<string>(),
-                    callback["payload"]?.GetValue<string>() ?? "", ct);
+                    payload, ct);
                 break;
         }
     }
@@ -178,6 +186,18 @@ public sealed class BotUpdateHandler(
             await bot.AnswerCallbackAsync(callbackId,
                 new MaxMessage("Вход отклонён. Если это были не вы — ничего делать не нужно, без подтверждения войти нельзя."), ct);
         }
+    }
+
+    /// <summary>«Не смогу прийти», «Проведено», «Не состоялось» — сообщение заменяется на итог нажатия.</summary>
+    private async Task OnLessonButtonAsync(long maxUserId, string callbackId, string payload, JsonObject? message, CancellationToken ct)
+    {
+        var person = await FindByMaxIdAsync(maxUserId, ct);
+        if (person is null)
+        {
+            await bot.AnswerCallbackAsync(callbackId, new MaxMessage("Сначала нужно зарегистрироваться: отправьте боту любое сообщение."), ct);
+            return;
+        }
+        await bot.AnswerCallbackAsync(callbackId, await LessonButtons.HandleAsync(db, time, person, payload, message, ct), ct);
     }
 
     private Task AskConfirmationAsync(Person person, LoginRequest request, CancellationToken ct) =>

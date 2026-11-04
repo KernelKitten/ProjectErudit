@@ -73,7 +73,7 @@ public sealed class NotificationSender(
         notification.Attempts++;
         try
         {
-            await bot.SendMessageAsync(maxUserId, new MaxMessage(notification.Text), ct);
+            await bot.SendMessageAsync(maxUserId, LessonButtons.ToMessage(notification.Text, NotificationButton.FromJson(notification.Buttons)), ct);
             notification.Status = NotificationStatus.Sent;
             notification.SentAt = now;
             notification.LastError = null;

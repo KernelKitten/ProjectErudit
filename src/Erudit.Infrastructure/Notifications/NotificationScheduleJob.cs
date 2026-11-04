@@ -2,6 +2,7 @@ using Erudit.Domain;
 using Erudit.Domain.Lessons;
 using Erudit.Domain.Notifications;
 using Erudit.Domain.People;
+using Erudit.Infrastructure.Lessons;
 using Erudit.Infrastructure.Persistence;
 using Erudit.Infrastructure.School;
 using Hangfire;
@@ -16,6 +17,7 @@ namespace Erudit.Infrastructure.Notifications;
 /// она смотрит на занятия как они есть сейчас и ставит в очередь то, чему пора:
 ///  - ученику и родителю с «Все уведомления» — накануне в 17:00 и в день занятия в 7:00, все занятия дня одним сообщением;
 ///  - учителю — за 2 часа (если это не раньше 7:00) и за 15 минут, с перечнем записанных;
+///  - учителю сразу после занятия — кнопки «Проведено» / «Не состоялось»; ученику в напоминаниях — «Не смогу прийти»;
 ///  - учителю в 19:00 — сколько занятий не отмечено, со ссылкой на сайт;
 ///  - родителю в воскресенье в 18:00 — сводка: прошлая неделя и занятия на следующую.
 /// Момент пропущен меньше чем на 30 минут (сайт перезапускался) — сообщение ещё уходит; позже — уже нет.
@@ -62,6 +64,7 @@ public sealed class NotificationScheduleJob(
         {
             due.AddRange(await TeacherSoonAsync(minutes, nowUtc, ct));
         }
+        due.AddRange(await EndedAsync(nowUtc, ct));
         if (IsDue(today, UnmarkedAt, nowUtc))
         {
             due.AddRange(await UnmarkedAsync(today, nowUtc, ct));
@@ -93,6 +96,9 @@ public sealed class NotificationScheduleJob(
         return moment <= nowUtc && nowUtc < moment + Grace;
     }
 
+    /// <summary>Надпись на кнопке должна быть короткой: длинное название предмета обрезаем.</summary>
+    private static string Short(string subject) => subject.Length <= 18 ? subject : subject[..17] + "…";
+
     private static Notification New(int recipientId, string key, string text, DateTime nowUtc, DateTime expiresAt) => new()
     {
         RecipientId = recipientId, Key = key, Text = text, CreatedAt = nowUtc, NextAttemptAt = nowUtc, ExpiresAt = expiresAt,
@@ -110,8 +116,10 @@ public sealed class NotificationScheduleJob(
             .Select(e => new
             {
                 e.StudentId,
+                e.LessonId,
                 StudentMax = e.Student.MaxUserId,
                 Child = e.Student.LastName + " " + e.Student.FirstName,
+                ChildFirst = e.Student.FirstName,
                 Lesson = new LessonRow(e.Lesson.StartsAt, e.Lesson.DurationMinutes, e.Lesson.LessonNumber, e.Lesson.Subject.Name, e.Lesson.Room.Name,
                     e.Lesson.Teacher.LastName, e.Lesson.Teacher.FirstName, e.Lesson.Teacher.MiddleName),
             })
@@ -126,19 +134,24 @@ public sealed class NotificationScheduleJob(
             .Select(l => new { l.ParentId, l.StudentId })
             .ToListAsync(ct);
 
-        // Кому и какие строки: самому ученику — без имени, родителю — с именем ребёнка.
+        // Кому и какие строки: самому ученику — без имени, родителю — с именем ребёнка. У каждой строки — кнопка отказа.
+        var when = (LessonRow l) => $"{SchoolTime.ToSchool(l.StartsAt):H:mm} {Short(l.Subject)}";
         var lines = rows.Where(r => r.StudentMax != null)
-            .Select(r => (Recipient: r.StudentId, r.Lesson, Line: NotificationText.LessonLine(r.Lesson.Info)))
+            .Select(r => (Recipient: r.StudentId, r.Lesson, Line: NotificationText.LessonLine(r.Lesson.Info),
+                Button: LessonButtons.SkipButton(r.LessonId, r.StudentId, $"🚫 Не смогу: {when(r.Lesson)}")))
             .Concat(parents.SelectMany(p => rows.Where(r => r.StudentId == p.StudentId)
-                .Select(r => (Recipient: p.ParentId, r.Lesson, Line: $"{r.Child}: {NotificationText.LessonLine(r.Lesson.Info)}"))));
+                .Select(r => (Recipient: p.ParentId, r.Lesson, Line: $"{r.Child}: {NotificationText.LessonLine(r.Lesson.Info)}",
+                    Button: LessonButtons.SkipButton(r.LessonId, r.StudentId, $"🚫 {r.ChildFirst} не сможет: {when(r.Lesson)}")))));
         var kind = tomorrow ? "evening" : "morning";
         return lines
             .GroupBy(x => x.Recipient)
             .Select(g =>
             {
                 var ordered = g.OrderBy(x => x.Lesson.StartsAt).ThenBy(x => x.Line).ToList();
-                return New(g.Key, $"{kind}:{g.Key}:{date:yyyyMMdd}", NotificationText.StudentDay(date, tomorrow, ordered.Select(x => x.Line)),
-                    nowUtc, ordered[^1].Lesson.StartsAt);
+                var notification = New(g.Key, $"{kind}:{g.Key}:{date:yyyyMMdd}",
+                    NotificationText.StudentDay(date, tomorrow, ordered.Select(x => x.Line)), nowUtc, ordered[^1].Lesson.StartsAt);
+                notification.Buttons = NotificationButton.ToJson(ordered.Select(x => x.Button).ToList());
+                return notification;
             })
             .ToList();
     }
@@ -175,6 +188,42 @@ public sealed class NotificationScheduleJob(
                 NotificationText.TeacherSoon(minutesBefore, l.Lesson.Info,
                     l.Students.Select(s => Person.Short(s.LastName, s.FirstName, s.MiddleName)).Order().ToList(), l.Capacity),
                 nowUtc, l.Lesson.StartsAt))
+            .ToList();
+    }
+
+    /// <summary>Сразу после конца занятия (опоздание — до <see cref="Grace"/>) — учителю с кнопками отметки.</summary>
+    private async Task<List<Notification>> EndedAsync(DateTime nowUtc, CancellationToken ct)
+    {
+        // Конец = начало + длительность; длительность до 10 часов — берём начавшиеся с запасом и проверяем конец здесь.
+        var from = nowUtc - Grace - TimeSpan.FromMinutes(LessonService.MaxActualMinutes);
+        var lessons = await db.Lessons
+            .Where(l => l.Status == LessonStatus.Planned && l.StartsAt > from && l.StartsAt < nowUtc
+                        && l.Teacher.IsActive && l.Teacher.MaxUserId != null)
+            .Select(l => new
+            {
+                l.Id,
+                l.TeacherId,
+                Lesson = new LessonRow(l.StartsAt, l.DurationMinutes, l.LessonNumber, l.Subject.Name, l.Room.Name,
+                    l.Teacher.LastName, l.Teacher.FirstName, l.Teacher.MiddleName),
+                Students = l.Enrollments.Where(e => e.Status == EnrollmentStatus.Active)
+                    .Select(e => new { e.Student.LastName, e.Student.FirstName, e.Student.MiddleName }).ToList(),
+            })
+            .ToListAsync(ct);
+        return lessons
+            .Where(l =>
+            {
+                var end = l.Lesson.StartsAt.AddMinutes(l.Lesson.DurationMinutes);
+                return end <= nowUtc && nowUtc < end + Grace;
+            })
+            .Select(l =>
+            {
+                var notification = New(l.TeacherId, $"end:{l.Id}:{l.Lesson.StartsAt:yyyyMMddHHmm}",
+                    NotificationText.LessonEnded(l.Lesson.Info,
+                        l.Students.Select(s => Person.Short(s.LastName, s.FirstName, s.MiddleName)).Order().ToList()),
+                    nowUtc, nowUtc.AddHours(12));
+                notification.Buttons = NotificationButton.ToJson(LessonButtons.MarkButtons(l.Id));
+                return notification;
+            })
             .ToList();
     }
 

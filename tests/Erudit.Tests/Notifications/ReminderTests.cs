@@ -1,7 +1,11 @@
+using System.Text.Json.Nodes;
 using Erudit.Domain;
 using Erudit.Domain.Lessons;
+using Erudit.Domain.Notifications;
 using Erudit.Domain.People;
 using Erudit.Domain.School;
+using Erudit.Infrastructure.Auth;
+using Erudit.Infrastructure.Max;
 using Erudit.Infrastructure.Notifications;
 using Erudit.Infrastructure.School;
 using Erudit.Tests.Database;
@@ -11,7 +15,7 @@ using Microsoft.Extensions.Options;
 
 namespace Erudit.Tests.Notifications;
 
-/// <summary>Ежеминутная задача: напоминания, неотмеченные, сводка родителю. Свой учебный год у каждого теста (2087–2090).</summary>
+/// <summary>Ежеминутная задача: напоминания, неотмеченные, сводка родителю, кнопки. Свой учебный год у каждого теста (2087–2092).</summary>
 [Collection(DatabaseCollection.Name)]
 public class ReminderTests(TestDatabase database)
 {
@@ -139,6 +143,123 @@ public class ReminderTests(TestDatabase database)
         await RunAsync(w.Monday.AddDays(1), new TimeOnly(19, 5));
         Assert.Equal("📝 Не отмечено занятий: 2. Отметьте, проведены ли они и кто был: https://test.example/teacher",
             Assert.Single(await TextsAsync(w.TeacherId)));
+    }
+
+    // ---------------------------------------------------------------- Кнопки
+
+    private sealed class FixedTime(DateTime utc) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utc;
+    }
+
+    private sealed class FakeBot : IMaxBotClient
+    {
+        public List<MaxMessage> Answers { get; } = [];
+        public Task<MaxBotInfo> GetMeAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<MaxUpdatesPage> GetUpdatesAsync(long? marker, int timeoutSeconds, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SendMessageAsync(long userId, MaxMessage message, CancellationToken ct = default) => throw new NotSupportedException();
+
+        public Task AnswerCallbackAsync(string callbackId, MaxMessage message, CancellationToken ct = default)
+        {
+            Answers.Add(message);
+            return Task.CompletedTask;
+        }
+    }
+
+    private async Task<Notification> LastNotificationAsync(int personId)
+    {
+        await using var db = database.CreateContext();
+        return await db.Notifications.Where(n => n.RecipientId == personId).OrderBy(n => n.Id).LastAsync();
+    }
+
+    /// <summary>Нажатие кнопки под сообщением — так, как его присылает MAX: вместе с самим сообщением.</summary>
+    private async Task<MaxMessage> PressAsync(long maxUserId, Notification notification, string payload, DateTime nowUtc)
+    {
+        var bot = new FakeBot();
+        await using var db = database.CreateContext();
+        var time = new FixedTime(nowUtc);
+        var handler = new BotUpdateHandler(db, new PersonRegistration(db, time), bot, Options.Create(new MaxOptions { BotToken = "test" }),
+            time, NullLogger<BotUpdateHandler>.Instance);
+        var shown = LessonButtons.ToMessage(notification.Text, NotificationButton.FromJson(notification.Buttons)).ToJson();
+        await handler.HandleAsync(new JsonObject
+        {
+            ["update_type"] = "message_callback",
+            ["callback"] = new JsonObject
+            {
+                ["callback_id"] = Guid.NewGuid().ToString(), ["payload"] = payload, ["user"] = new JsonObject { ["user_id"] = maxUserId },
+            },
+            ["message"] = new JsonObject { ["body"] = shown },
+        });
+        return Assert.Single(bot.Answers);
+    }
+
+    private async Task<long> MaxIdAsync(int personId)
+    {
+        await using var db = database.CreateContext();
+        return await db.People.Where(p => p.Id == personId).Select(p => p.MaxUserId!.Value).SingleAsync();
+    }
+
+    [DatabaseFact]
+    public async Task Кнопка_не_смогу_прийти__отказ_только_от_этого_занятия()
+    {
+        var w = await CreateWorldAsync(2091);
+        var wednesday = w.Monday.AddDays(2);
+        await AddLessonAsync(w, wednesday, new TimeOnly(14, 15), kid: Attendance.Unknown, lessonNumber: 8);
+        await AddLessonAsync(w, wednesday, new TimeOnly(15, 15), kid: Attendance.Unknown);
+        await RunAsync(wednesday.AddDays(-1), new TimeOnly(17, 5));
+        var reminder = await LastNotificationAsync(w.KidId);
+        var buttons = NotificationButton.FromJson(reminder.Buttons);
+        Assert.Equal(["🚫 Не смогу: 14:15 Предмет 2091", "🚫 Не смогу: 15:15 Предмет 2091"], buttons.Select(b => b.Text));
+        Assert.Equal("🚫 Тест не сможет: 14:15 Предмет 2091",
+            NotificationButton.FromJson((await LastNotificationAsync(w.ParentAllId)).Buttons)[0].Text);
+        var evening = SchoolTime.ToUtc(wednesday.AddDays(-1), new TimeOnly(17, 10));
+
+        // Чужой человек (учитель) нажать за ученика не может.
+        var stranger = await PressAsync(await MaxIdAsync(w.TeacherId), reminder, buttons[0].Payload, evening);
+        Assert.Contains("⚠️ Записывать ученика может он сам или его родитель.", stranger.Text);
+
+        var answer = await PressAsync(await MaxIdAsync(w.KidId), reminder, buttons[0].Payload, evening);
+        Assert.StartsWith(reminder.Text + "\n\n✔️ Отказ записан", answer.Text);
+        Assert.Equal(buttons[1].Payload, Assert.Single(answer.Buttons!.SelectMany(r => r)).Payload); // вторая кнопка осталась
+
+        await using var db = database.CreateContext();
+        var statuses = await db.Enrollments.Where(e => e.StudentId == w.KidId).OrderBy(e => e.Lesson.StartsAt).Select(e => e.Status).ToListAsync();
+        Assert.Equal([EnrollmentStatus.Declined, EnrollmentStatus.Active], statuses);
+        Assert.StartsWith("➖ Отказ", (await TextsAsync(w.TeacherId)).Last());
+    }
+
+    [DatabaseFact]
+    public async Task После_занятия__учителю_кнопки_проведено_и_не_состоялось()
+    {
+        var w = await CreateWorldAsync(2092);
+        var day = w.Monday.AddDays(1);
+        await AddLessonAsync(w, day, new TimeOnly(14, 15), kid: Attendance.Unknown, lessonNumber: 8);
+        await AddLessonAsync(w, day, new TimeOnly(15, 15));
+
+        await RunAsync(day, new TimeOnly(14, 56)); // первое закончилось в 14:55
+        var ended = await LastNotificationAsync(w.TeacherId);
+        Assert.StartsWith("🏁 Занятие закончилось: 8 урок (14:15–14:55)", ended.Text);
+        Assert.Contains($"Записаны: Ученик2092 Т.", ended.Text);
+        var buttons = NotificationButton.FromJson(ended.Buttons);
+        Assert.Equal(["✅ Проведено", "❌ Не состоялось"], buttons.Select(b => b.Text));
+
+        var teacherMax = await MaxIdAsync(w.TeacherId);
+        var at = SchoolTime.ToUtc(day, new TimeOnly(15, 0));
+        var held = await PressAsync(teacherMax, ended, buttons[0].Payload, at);
+        Assert.Contains("✅ Отмечено: проведено", held.Text);
+        Assert.Null(held.Buttons); // обе кнопки убраны
+        // Второе нажатие (или отметка уже есть с сайта) ничего не перезаписывает.
+        Assert.Contains("⚠️ Занятие уже отмечено", (await PressAsync(teacherMax, ended, buttons[1].Payload, at)).Text);
+
+        await RunAsync(day, new TimeOnly(15, 56));
+        var second = await LastNotificationAsync(w.TeacherId);
+        Assert.Equal("Записанных не было.", second.Text.Split('\n')[1]);
+        await PressAsync(teacherMax, second, NotificationButton.FromJson(second.Buttons)[1].Payload, SchoolTime.ToUtc(day, new TimeOnly(16, 0)));
+
+        await using var db = database.CreateContext();
+        var lessons = await db.Lessons.Include(l => l.Enrollments).Where(l => l.TeacherId == w.TeacherId).OrderBy(l => l.StartsAt).ToListAsync();
+        Assert.Equal([LessonStatus.Held, LessonStatus.NotHeld], lessons.Select(l => l.Status));
+        Assert.Equal(Attendance.Present, Assert.Single(lessons[0].Enrollments).Attendance);
     }
 
     [DatabaseFact]

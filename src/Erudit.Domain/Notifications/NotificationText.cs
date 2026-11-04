@@ -73,6 +73,12 @@ public static class NotificationText
         $"{LessonLine(l, withTeacher: false)}.\n" +
         (students.Count == 0 ? "Пока никто не записан." : $"Записаны ({students.Count} из {capacity}): {string.Join(", ", students).TrimEnd('.')}.");
 
+    /// <summary>Учителю сразу после занятия — с кнопками «Проведено» / «Не состоялось».</summary>
+    public static string LessonEnded(LessonInfo l, IReadOnlyList<string> students) =>
+        $"🏁 Занятие закончилось: {LessonLine(l, withTeacher: false)}.\n" +
+        (students.Count == 0 ? "Записанных не было." : $"Записаны: {string.Join(", ", students).TrimEnd('.')}.") +
+        "\n«Проведено» — все записанные были; кого не было, отметьте на сайте.";
+
     public static string Unmarked(int count, string? link) =>
         $"📝 Не отмечено занятий: {count}. Отметьте, проведены ли они и кто был" + (link is null ? " — на сайте." : $": {link}");
 
