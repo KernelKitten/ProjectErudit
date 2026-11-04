@@ -12,6 +12,9 @@ public sealed record LessonInfo(
     string Room,
     string Teacher);
 
+/// <summary>Ребёнок в недельной сводке: сколько был и пропустил на прошлой неделе, занятия на следующую.</summary>
+public sealed record ChildWeek(string Name, int Attended, int Missed, IReadOnlyList<LessonInfo> Next);
+
 /// <summary>Тексты сообщений бота — в одном месте, чтобы их было легко проверять и менять.</summary>
 public static class NotificationText
 {
@@ -51,6 +54,36 @@ public static class NotificationText
     public static string TeacherSignedUp(string student, string lessons) => $"➕ Запись: {student}. {lessons}.";
 
     public static string TeacherDeclined(string student, string lessons) => $"➖ Отказ: {student}. {lessons}.";
+
+    // ---------------------------------------------------------------- Напоминания и сводки (по времени)
+
+    /// <summary>Строка списка: «8 урок (14:15–14:55) — Математика, Каб.1, учитель Соколова Е.В.»; с датой — «ср 12.11, 8 урок …».</summary>
+    public static string LessonLine(LessonInfo l, bool withDate = false, bool withTeacher = true) =>
+        (withDate ? $"{l.Date.ToString("ddd dd.MM", Ru)}, " : "") + $"{Time(l)} — {l.Subject}, {l.Room}" +
+        (withTeacher ? $", учитель {l.Teacher}" : "");
+
+    /// <summary>Ученику (родителю) накануне или утром: все занятия дня одним сообщением.</summary>
+    public static string StudentDay(DateOnly date, bool tomorrow, IEnumerable<string> lines) =>
+        $"🔔 {(tomorrow ? "Завтра" : "Сегодня")}, {date.ToString("ddd dd.MM", Ru)}, дополнительные занятия:\n" +
+        string.Join("\n", lines.Select(line => $"• {line}"));
+
+    /// <param name="students">Кто записан; пусто — «пока никто не записан».</param>
+    public static string TeacherSoon(int minutesBefore, LessonInfo l, IReadOnlyList<string> students, int capacity) =>
+        $"⏰ Через {(minutesBefore >= 60 ? $"{minutesBefore / 60} ч" : $"{minutesBefore} мин")} занятие: " +
+        $"{LessonLine(l, withTeacher: false)}.\n" +
+        (students.Count == 0 ? "Пока никто не записан." : $"Записаны ({students.Count} из {capacity}): {string.Join(", ", students).TrimEnd('.')}.");
+
+    public static string Unmarked(int count, string? link) =>
+        $"📝 Не отмечено занятий: {count}. Отметьте, проведены ли они и кто был" + (link is null ? " — на сайте." : $": {link}");
+
+    /// <summary>Родителю в воскресенье: по каждому ребёнку — итоги прошлой недели и занятия на следующую.</summary>
+    public static string WeeklySummary(IEnumerable<ChildWeek> children) =>
+        "📋 Сводка по дополнительным занятиям." + string.Concat(children.Select(c =>
+            $"\n\n{c.Name}:" +
+            (c.Attended + c.Missed > 0 ? $"\nПрошлая неделя: был(а) — {c.Attended}, не был(а) — {c.Missed}." : "") +
+            (c.Next.Count == 0
+                ? "\nНа этой неделе занятий нет."
+                : "\nНа этой неделе:" + string.Concat(c.Next.Select(l => $"\n• {LessonLine(l, withDate: true)}")))));
 
     /// <summary>Родителю: чьё это занятие. «Иванов Пётр: ✅ Новая запись…»</summary>
     public static string ForParent(IEnumerable<string> children, string text) => $"{string.Join(", ", children)}: {text}";

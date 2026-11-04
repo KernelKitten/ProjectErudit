@@ -89,6 +89,7 @@ public static class DependencyInjection
         services.AddScoped<Lessons.TeacherReportService>();
         services.AddScoped<SchoolYearReminderJob>();
         services.AddScoped<Notifications.NotificationSender>();
+        services.AddScoped<Notifications.NotificationScheduleJob>();
         services.AddHostedService<Notifications.NotificationSenderService>();
         services.AddOptions<SiteOptions>().Bind(configuration.GetSection(SiteOptions.SectionName));
         services.AddSingleton<LoginRequestService>();
@@ -114,5 +115,8 @@ public static class DependencyInjection
         jobs.AddOrUpdate<SchoolYearReminderJob>(SchoolYearReminderJob.RecurringJobId,
             job => job.RunAsync(CancellationToken.None), "0 9 * * *",
             new RecurringJobOptions { TimeZone = Erudit.Domain.SchoolTime.Zone });
+        // Каждую минуту: напоминания, сводки, неотмеченные — задача сама решает, чему пора.
+        jobs.AddOrUpdate<Notifications.NotificationScheduleJob>(Notifications.NotificationScheduleJob.RecurringJobId,
+            job => job.RunAsync(CancellationToken.None), Cron.Minutely());
     }
 }

@@ -24,6 +24,12 @@ public class Notification
 
     public string Text { get; set; } = "";
 
+    /// <summary>
+    /// Ключ от дублей у сообщений по времени: «кому + что + о каком занятии или дне» (например, evening:15:20261112).
+    /// Уникальный: ежеминутная задача не поставит одно и то же напоминание второй раз. У мгновенных — пусто.
+    /// </summary>
+    public string? Key { get; set; }
+
     public NotificationStatus Status { get; set; } = NotificationStatus.Pending;
 
     public DateTime CreatedAt { get; set; }

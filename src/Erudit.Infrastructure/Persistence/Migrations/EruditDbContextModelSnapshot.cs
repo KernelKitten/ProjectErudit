@@ -477,6 +477,11 @@ namespace Erudit.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
 
+                    b.Property<string>("Key")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("key");
+
                     b.Property<string>("LastError")
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)")
@@ -508,6 +513,11 @@ namespace Erudit.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_notifications");
+
+                    b.HasIndex("Key")
+                        .IsUnique()
+                        .HasDatabaseName("ix_notifications_key")
+                        .HasFilter("key IS NOT NULL");
 
                     b.HasIndex("NextAttemptAt")
                         .HasDatabaseName("ix_notifications_next_attempt_at")

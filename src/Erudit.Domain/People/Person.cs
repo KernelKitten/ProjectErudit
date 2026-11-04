@@ -28,15 +28,15 @@ public class Person
         .Where(s => !string.IsNullOrWhiteSpace(s)));
 
     /// <summary>«Иванов И.И.» — как в школьном расписании.</summary>
-    public string ShortName
+    public string ShortName => Short(LastName, FirstName, MiddleName);
+
+    /// <summary>«Иванов И.И.» из частей имени — когда из базы выбраны только они, без всего человека.</summary>
+    public static string Short(string lastName, string firstName, string? middleName)
     {
-        get
-        {
-            var initials = string.Concat(new[] { FirstName, MiddleName }
-                .Where(s => !string.IsNullOrWhiteSpace(s))
-                .Select(s => s![0] + "."));
-            return initials.Length == 0 ? LastName : $"{LastName} {initials}";
-        }
+        var initials = string.Concat(new[] { firstName, middleName }
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => s![0] + "."));
+        return initials.Length == 0 ? lastName : $"{lastName} {initials}";
     }
 
     public bool HasRole(Role role) => Roles.Any(r => r.Role == role);
