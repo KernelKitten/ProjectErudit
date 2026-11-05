@@ -1,4 +1,5 @@
 using System.Globalization;
+using Erudit.Domain.Lessons;
 
 namespace Erudit.Domain.Notifications;
 
@@ -14,6 +15,9 @@ public sealed record LessonInfo(
 
 /// <summary>Ребёнок в недельной сводке: сколько был и пропустил на прошлой неделе, занятия на следующую.</summary>
 public sealed record ChildWeek(string Name, int Attended, int Missed, IReadOnlyList<LessonInfo> Next);
+
+/// <summary>Раздел ответа на команду бота: «Вы ведёте», «Вы записаны» или имя ребёнка — и строки занятий.</summary>
+public sealed record ScheduleSection(string Title, IReadOnlyList<string> Lines);
 
 /// <summary>Тексты сообщений бота — в одном месте, чтобы их было легко проверять и менять.</summary>
 public static class NotificationText
@@ -90,6 +94,27 @@ public static class NotificationText
             (c.Next.Count == 0
                 ? "\nНа этой неделе занятий нет."
                 : "\nНа этой неделе:" + string.Concat(c.Next.Select(l => $"\n• {LessonLine(l, withDate: true)}")))));
+
+    // ---------------------------------------------------------------- Команды бота «Сегодня» / «На неделю»
+
+    public static string TodayTitle(DateOnly date) => $"📅 Сегодня, {date.ToString("ddd dd.MM", Ru)}";
+
+    public static string WeekTitle(DateOnly from, DateOnly to) =>
+        $"🗓 Занятия с {from.ToString("ddd dd.MM", Ru)} по {to.ToString("ddd dd.MM", Ru)}";
+
+    /// <summary>Пометка перед строкой: проведено, не состоялось, отменено; у запланированного — ничего.</summary>
+    public static string StatusMark(LessonStatus status) => status switch
+    {
+        LessonStatus.Held => "✅ ",
+        LessonStatus.NotHeld => "⚪ не состоялось: ",
+        LessonStatus.Cancelled => "❌ отменено: ",
+        _ => "",
+    };
+
+    /// <summary>Ответ на команду: заголовок и разделы («Вы ведёте», «Вы записаны», дети); нет ни одного — «занятий нет».</summary>
+    public static string Schedule(string title, IReadOnlyList<ScheduleSection> sections) => sections.Count == 0
+        ? $"{title}: дополнительных занятий нет."
+        : title + string.Concat(sections.Select(s => $"\n\n{s.Title}:" + string.Concat(s.Lines.Select(line => $"\n• {line}"))));
 
     /// <summary>Родителю: чьё это занятие. «Иванов Пётр: ✅ Новая запись…»</summary>
     public static string ForParent(IEnumerable<string> children, string text) => $"{string.Join(", ", children)}: {text}";

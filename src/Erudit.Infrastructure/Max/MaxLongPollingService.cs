@@ -23,6 +23,19 @@ public sealed class MaxLongPollingService(
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
+    /// <summary>Меню команд «/today», «/week». Не вышло — не страшно: команды работают и набранные вручную.</summary>
+    private async Task SetCommandsAsync(CancellationToken ct)
+    {
+        try
+        {
+            await bot.SetCommandsAsync(Notifications.BotSchedule.Commands, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Не удалось задать меню команд бота");
+        }
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // Сначала проверяем, что бот доступен. Не вышло (нет сети, неверный токен, не доверяем сертификату MAX) —
@@ -33,6 +46,7 @@ public sealed class MaxLongPollingService(
             {
                 var me = await bot.GetMeAsync(stoppingToken);
                 logger.LogInformation("Бот MAX подключён: {Name} (@{Username}), id {Id}", me.Name, me.Username, me.UserId);
+                await SetCommandsAsync(stoppingToken);
                 break;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

@@ -130,6 +130,7 @@ public class BotLoginTests(TestDatabase database)
         public List<MaxMessage> Answers { get; } = [];
 
         public Task<MaxBotInfo> GetMeAsync(CancellationToken ct = default) => Task.FromResult(new MaxBotInfo(1, "Тестовый бот", "test_bot"));
+        public Task SetCommandsAsync(IReadOnlyList<MaxBotCommand> commands, CancellationToken ct = default) => Task.CompletedTask;
         public Task<MaxUpdatesPage> GetUpdatesAsync(long? marker, int timeoutSeconds, CancellationToken ct = default) =>
             Task.FromResult(new MaxUpdatesPage([], marker));
 

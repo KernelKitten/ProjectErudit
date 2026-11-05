@@ -156,6 +156,7 @@ public class ReminderTests(TestDatabase database)
     {
         public List<MaxMessage> Answers { get; } = [];
         public Task<MaxBotInfo> GetMeAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SetCommandsAsync(IReadOnlyList<MaxBotCommand> commands, CancellationToken ct = default) => Task.CompletedTask;
         public Task<MaxUpdatesPage> GetUpdatesAsync(long? marker, int timeoutSeconds, CancellationToken ct = default) => throw new NotSupportedException();
         public Task SendMessageAsync(long userId, MaxMessage message, CancellationToken ct = default) => throw new NotSupportedException();
 

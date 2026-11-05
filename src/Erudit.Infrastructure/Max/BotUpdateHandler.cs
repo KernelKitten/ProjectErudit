@@ -117,6 +117,10 @@ public sealed class BotUpdateHandler(
         {
             await AskPhoneAsync(maxUserId, "Сначала нужно зарегистрироваться: подтвердите номер телефона.", ct);
         }
+        else if (BotSchedule.TryParse(message["body"]?["text"]?.GetValue<string>(), out var week))
+        {
+            await bot.SendMessageAsync(maxUserId, await new BotSchedule(db, time).BuildAsync(person.Id, week, ct), ct);
+        }
         else
         {
             await SendHintAsync(person, ct);
@@ -210,7 +214,9 @@ public sealed class BotUpdateHandler(
 
     private Task SendHintAsync(Person person, CancellationToken ct) =>
         SendAsync(person.MaxUserId!.Value,
-            $"Здравствуйте, {person.ShortName}! Чтобы войти на сайт, откройте страницу входа на компьютере и отсканируйте QR-код.", ct);
+            $"Здравствуйте, {person.ShortName}!\n" +
+            "/today — занятия на сегодня, /week — на неделю (команды есть и в меню бота).\n" +
+            "Чтобы войти на сайт, откройте страницу входа на компьютере и отсканируйте QR-код.", ct);
 
     private Task SendAsync(long maxUserId, string text, CancellationToken ct) =>
         bot.SendMessageAsync(maxUserId, new MaxMessage(text), ct);

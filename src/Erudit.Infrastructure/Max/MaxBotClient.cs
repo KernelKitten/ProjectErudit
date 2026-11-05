@@ -16,6 +16,9 @@ public interface IMaxBotClient
 
     /// <summary>Ответ на нажатие кнопки: заменяет сообщение с кнопками новым текстом (кнопки исчезают).</summary>
     Task AnswerCallbackAsync(string callbackId, MaxMessage message, CancellationToken ct = default);
+
+    /// <summary>Меню команд бота — подсказки, когда пользователь вводит «/».</summary>
+    Task SetCommandsAsync(IReadOnlyList<MaxBotCommand> commands, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -72,6 +75,17 @@ public sealed class MaxBotClient(HttpClient http) : IMaxBotClient
         await EnsureSuccessAsync(response, ct);
     }
 
+    /// <summary>PATCH /me/commands — меню команд (до 32 штук); пустой список удаляет все.</summary>
+    public async Task SetCommandsAsync(IReadOnlyList<MaxBotCommand> commands, CancellationToken ct = default)
+    {
+        var body = new JsonObject
+        {
+            ["commands"] = new JsonArray([.. commands.Select(c => (JsonNode)new JsonObject { ["name"] = c.Name, ["description"] = c.Description })]),
+        };
+        using var response = await http.PatchAsJsonAsync("me/commands", body, ct);
+        await EnsureSuccessAsync(response, ct);
+    }
+
     /// <summary>Как EnsureSuccessStatusCode, но с текстом ответа MAX в ошибке — так понятнее, что не так.</summary>
     private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken ct)
     {
@@ -84,6 +98,9 @@ public sealed class MaxBotClient(HttpClient http) : IMaxBotClient
 }
 
 public sealed record MaxBotInfo(long UserId, string Name, string? Username);
+
+/// <summary>Команда в меню бота: имя без «/» и описание.</summary>
+public sealed record MaxBotCommand(string Name, string Description);
 
 public sealed record MaxUpdatesPage(IReadOnlyList<JsonObject> Updates, long? Marker);
 

@@ -23,7 +23,14 @@ public static class LessonButtons
     public static bool IsLessonPayload(string payload) =>
         payload.StartsWith(Skip) || payload.StartsWith(Held) || payload.StartsWith(NotHeld);
 
-    public static NotificationButton SkipButton(int lessonId, int studentId, string text) => new(text, $"{Skip}{lessonId}:{studentId}");
+    /// <summary>«🚫 Не смогу: 14:15 Математика»; родителю (<paramref name="childFirstName"/> задано) — «🚫 Пётр не сможет: …».</summary>
+    public static NotificationButton SkipButton(int lessonId, int studentId, string? childFirstName, DateTime startsAtUtc, string subject)
+    {
+        // Надпись на кнопке должна быть короткой: длинное название предмета обрезаем.
+        var when = $"{SchoolTime.ToSchool(startsAtUtc):H:mm} {(subject.Length <= 18 ? subject : subject[..17] + "…")}";
+        var text = childFirstName is null ? $"🚫 Не смогу: {when}" : $"🚫 {childFirstName} не сможет: {when}";
+        return new(text, $"{Skip}{lessonId}:{studentId}");
+    }
 
     public static IReadOnlyList<NotificationButton> MarkButtons(int lessonId) =>
         [new("✅ Проведено", $"{Held}{lessonId}"), new("❌ Не состоялось", $"{NotHeld}{lessonId}")];

@@ -31,6 +31,7 @@ public class NotificationTests(TestDatabase database)
         public int FailuresLeft { get; set; }
 
         public Task<MaxBotInfo> GetMeAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SetCommandsAsync(IReadOnlyList<MaxBotCommand> commands, CancellationToken ct = default) => Task.CompletedTask;
         public Task<MaxUpdatesPage> GetUpdatesAsync(long? marker, int timeoutSeconds, CancellationToken ct = default) => throw new NotSupportedException();
         public Task AnswerCallbackAsync(string callbackId, MaxMessage message, CancellationToken ct = default) => throw new NotSupportedException();
 

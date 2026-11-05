@@ -96,9 +96,6 @@ public sealed class NotificationScheduleJob(
         return moment <= nowUtc && nowUtc < moment + Grace;
     }
 
-    /// <summary>Надпись на кнопке должна быть короткой: длинное название предмета обрезаем.</summary>
-    private static string Short(string subject) => subject.Length <= 18 ? subject : subject[..17] + "…";
-
     private static Notification New(int recipientId, string key, string text, DateTime nowUtc, DateTime expiresAt) => new()
     {
         RecipientId = recipientId, Key = key, Text = text, CreatedAt = nowUtc, NextAttemptAt = nowUtc, ExpiresAt = expiresAt,
@@ -135,13 +132,12 @@ public sealed class NotificationScheduleJob(
             .ToListAsync(ct);
 
         // Кому и какие строки: самому ученику — без имени, родителю — с именем ребёнка. У каждой строки — кнопка отказа.
-        var when = (LessonRow l) => $"{SchoolTime.ToSchool(l.StartsAt):H:mm} {Short(l.Subject)}";
         var lines = rows.Where(r => r.StudentMax != null)
             .Select(r => (Recipient: r.StudentId, r.Lesson, Line: NotificationText.LessonLine(r.Lesson.Info),
-                Button: LessonButtons.SkipButton(r.LessonId, r.StudentId, $"🚫 Не смогу: {when(r.Lesson)}")))
+                Button: LessonButtons.SkipButton(r.LessonId, r.StudentId, null, r.Lesson.StartsAt, r.Lesson.Subject)))
             .Concat(parents.SelectMany(p => rows.Where(r => r.StudentId == p.StudentId)
                 .Select(r => (Recipient: p.ParentId, r.Lesson, Line: $"{r.Child}: {NotificationText.LessonLine(r.Lesson.Info)}",
-                    Button: LessonButtons.SkipButton(r.LessonId, r.StudentId, $"🚫 {r.ChildFirst} не сможет: {when(r.Lesson)}")))));
+                    Button: LessonButtons.SkipButton(r.LessonId, r.StudentId, r.ChildFirst, r.Lesson.StartsAt, r.Lesson.Subject)))));
         var kind = tomorrow ? "evening" : "morning";
         return lines
             .GroupBy(x => x.Recipient)
@@ -299,20 +295,5 @@ public sealed class NotificationScheduleJob(
             }
         }
         return result;
-    }
-
-    /// <summary>Занятие, как его выбираем из базы одним запросом; в текст — через <see cref="Info"/>.</summary>
-    private sealed record LessonRow(DateTime StartsAt, int DurationMinutes, int? LessonNumber, string Subject, string Room,
-        string TeacherLast, string TeacherFirst, string? TeacherMiddle)
-    {
-        public LessonInfo Info
-        {
-            get
-            {
-                var start = SchoolTime.ToSchool(StartsAt);
-                return new LessonInfo(Subject, DateOnly.FromDateTime(start), TimeOnly.FromDateTime(start), DurationMinutes, LessonNumber, Room,
-                    Person.Short(TeacherLast, TeacherFirst, TeacherMiddle));
-            }
-        }
     }
 }

@@ -195,6 +195,7 @@ public class SchoolYearTransitionTests(TestDatabase database)
     {
         public List<(long UserId, string Text)> Sent { get; } = [];
         public Task<MaxBotInfo> GetMeAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task SetCommandsAsync(IReadOnlyList<MaxBotCommand> commands, CancellationToken ct = default) => Task.CompletedTask;
         public Task<MaxUpdatesPage> GetUpdatesAsync(long? marker, int timeoutSeconds, CancellationToken ct = default) => throw new NotSupportedException();
         public Task SendMessageAsync(long userId, MaxMessage message, CancellationToken ct = default)
         {
