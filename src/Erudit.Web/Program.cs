@@ -97,7 +97,20 @@ if (!app.Environment.IsDevelopment())
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
-app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+// Страница «не найдено / нет доступа» — переадресацией, а не подстановкой (ReExecute): на подставленной
+// странице у форм меню (смена роли, «Выйти») нет antiforgery-токена, и они падали с ошибкой 500.
+// Переадресуем только открытие страницы в браузере (GET + text/html); ответы API остаются как есть.
+app.UseStatusCodePages(context =>
+{
+    var http = context.HttpContext;
+    if (HttpMethods.IsGet(http.Request.Method)
+        && http.Request.Headers.Accept.ToString().Contains("text/html")
+        && !http.Request.Path.StartsWithSegments("/not-found"))
+    {
+        http.Response.Redirect($"/not-found?code={http.Response.StatusCode}");
+    }
+    return Task.CompletedTask;
+});
 app.UseHttpsRedirection();
 
 app.UseAuthentication();

@@ -2,7 +2,23 @@
 @attribute [AllowAnonymous]
 @layout MainLayout
 
-<PageTitle>Страница не найдена</PageTitle>
+@* Сюда переадресует Program.cs (UseStatusCodePages) с кодом ответа: 403 — нет доступа, остальное — нет такой страницы. *@
+@if (Code is 401 or 403)
+{
+    <PageTitle>Нет доступа</PageTitle>
+    <MudText Typo="Typo.h5" Class="mt-4" GutterBottom>Нет доступа</MudText>
+    <MudText>
+        Эта страница недоступна в текущей роли. Переключите роль в правом верхнем углу.
+        <MudLink Href="/">На главную</MudLink>
+    </MudText>
+}
+else
+{
+    <PageTitle>Страница не найдена</PageTitle>
+    <MudText Typo="Typo.h5" Class="mt-4" GutterBottom>Страница не найдена</MudText>
+    <MudText>Такой страницы нет. <MudLink Href="/">На главную</MudLink></MudText>
+}
 
-<MudText Typo="Typo.h5" Class="mt-4" GutterBottom>Страница не найдена</MudText>
-<MudText>Такой страницы нет. <MudLink Href="/">На главную</MudLink></MudText>
+@code {
+    [SupplyParameterFromQuery] public int? Code { get; set; }
+}
