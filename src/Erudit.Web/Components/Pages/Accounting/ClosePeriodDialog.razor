@@ -1,0 +1,95 @@
+@* Закрытие месяца. Есть неотмеченные занятия — показываем их (клик — карточка, можно отметить прямо отсюда)
+   и кнопку «Закрыть всё равно»; нет — просто «Закрыть месяц». Закрывается с результатом Ok(текст для снекбара). *@
+@using Erudit.Infrastructure.Accounting
+@using Erudit.Web.Components.Pages.Teacher
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject IDialogService DialogService
+@inject TimeProvider Time
+
+<MudDialog>
+    <DialogContent>
+        <MudText Class="mb-3">
+            После закрытия занятия за @PeriodService.MonthName(Month) нельзя будет создавать, менять, отменять и отмечать,
+            а часы в отчётах за этот месяц станут окончательными. Открыть месяц снова можно на этой же странице.
+        </MudText>
+        @if (_unmarked is null)
+        {
+            <MudProgressLinear Indeterminate />
+        }
+        else if (_unmarked.Count > 0)
+        {
+            <MudAlert Severity="Severity.Warning" Dense Class="mb-2">
+                Не отмечено занятий: @_unmarked.Count. После закрытия они останутся «Запланировано» и в часы не войдут.
+                Отметить можно прямо здесь — нажмите на занятие.
+            </MudAlert>
+            <MudList T="int" Dense Style="max-height: 320px; overflow-y: auto">
+                @foreach (var l in _unmarked)
+                {
+                    <MudListItem T="int" OnClick="() => OpenLessonAsync(l.Id)" Icon="@Icons.Material.Outlined.EditCalendar">
+                        @SchoolTime.ToSchool(l.StartsAt).ToString("dd.MM H:mm") · @l.Teacher · @l.Subject
+                    </MudListItem>
+                }
+            </MudList>
+        }
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense Class="mt-2">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Не закрывать</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="_busy || _unmarked is null" OnClick="CloseAsync">
+            @(_unmarked is { Count: > 0 } ? "Закрыть всё равно" : "Закрыть месяц")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = null!;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+
+    /// <summary>Первое число закрываемого месяца.</summary>
+    [Parameter, EditorRequired] public DateOnly Month { get; set; }
+
+    private List<UnmarkedLesson>? _unmarked;
+    private string? _error;
+    private bool _busy;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _unmarked = await new PeriodService(db, Time).UnmarkedAsync(Month);
+    }
+
+    private async Task OpenLessonAsync(int lessonId)
+    {
+        var parameters = new DialogParameters<LessonCardDialog> { { d => d.LessonId, lessonId }, { d => d.CanEdit, true } };
+        var dialog = await DialogService.ShowAsync<LessonCardDialog>("Занятие", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
+        await dialog.Result;
+        await LoadAsync(); // могли отметить — список короче
+    }
+
+    private async Task CloseAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var user = (await AuthState).User;
+            await using var db = await DbFactory.CreateForAsync(user);
+            await new PeriodService(db, Time).CloseAsync(Month, user.GetPersonId() ?? 0);
+            Dialog.Close(DialogResult.Ok($"Месяц {PeriodService.MonthName(Month)} закрыт"));
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

@@ -1,0 +1,161 @@
+@page "/periods"
+@attribute [Authorize(Roles = AppRoles.DirectoryManagers)]
+@using Erudit.Domain.School
+@using Erudit.Infrastructure.Accounting
+@inject IDbContextFactory<EruditDbContext> DbFactory
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject TimeProvider Time
+
+<PageTitle>Закрытие месяцев</PageTitle>
+
+<MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-2">
+    <MudText Typo="Typo.h5" Class="flex-grow-1">Закрытие месяцев</MudText>
+    <MudSelect T="int?" Value="_yearId" ValueChanged="ChangeYearAsync" Label="Учебный год" Dense Style="max-width: 180px">
+        @foreach (var y in _years)
+        {
+            <MudSelectItem T="int?" Value="y.Id">@y.Name</MudSelectItem>
+        }
+    </MudSelect>
+</MudStack>
+<MudText Typo="Typo.body2" Class="mb-4">
+    Закрытый месяц нельзя изменить: занятия за него не создаются, не меняются и не отмечаются, часы в отчётах окончательные.
+    Если нужно что-то исправить — откройте месяц, исправьте и закройте снова. Закрыть можно только закончившийся месяц.
+</MudText>
+
+@if (_months is null)
+{
+    <MudProgressLinear Indeterminate />
+}
+else
+{
+    <MudTable Items="_months" Dense Hover Breakpoint="Breakpoint.Sm">
+        <HeaderContent>
+            <MudTh>Месяц</MudTh>
+            <MudTh>Проведено</MudTh>
+            <MudTh>Не состоялось</MudTh>
+            <MudTh>Отменено</MudTh>
+            <MudTh>Не отмечено</MudTh>
+            <MudTh>Состояние</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Месяц" Style="text-transform: capitalize">@PeriodService.MonthName(context.Month)</MudTd>
+            <MudTd DataLabel="Проведено">@context.Held</MudTd>
+            <MudTd DataLabel="Не состоялось">@context.NotHeld</MudTd>
+            <MudTd DataLabel="Отменено">@context.Cancelled</MudTd>
+            <MudTd DataLabel="Не отмечено">
+                @if (context.Unmarked > 0)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined">@context.Unmarked</MudChip>
+                }
+                else
+                {
+                    <span style="color: #666">—</span>
+                }
+            </MudTd>
+            <MudTd DataLabel="Состояние">
+                @if (context.Closed is { } closed)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Outlined.Lock">Закрыт</MudChip>
+                    <span style="color: #666">@SchoolTime.ToSchool(closed.AtUtc).ToString("dd.MM.yyyy"), @closed.By</span>
+                }
+                else if (context.Ended)
+                {
+                    <span>Открыт</span>
+                }
+                else if (context.Held + context.NotHeld + context.Unmarked > 0)
+                {
+                    <span style="color: #666">Идёт (впереди @context.Upcoming)</span>
+                }
+                else
+                {
+                    <span style="color: #666">Впереди</span>
+                }
+            </MudTd>
+            <MudTd>
+                @if (context.Closed is not null)
+                {
+                    <MudButton Size="Size.Small" StartIcon="@Icons.Material.Outlined.LockOpen" OnClick="() => OpenAsync(context.Month)">Открыть</MudButton>
+                }
+                else if (context.Ended)
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Outlined.Lock"
+                               OnClick="() => CloseAsync(context.Month)">Закрыть</MudButton>
+                }
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+
+    private List<AcademicYear> _years = [];
+    private int? _yearId;
+    private List<PeriodMonth>? _months;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _years = await db.AcademicYears.OrderByDescending(y => y.StartDate).ToListAsync();
+        var today = DateOnly.FromDateTime(SchoolTime.ToSchool(Time.GetUtcNow().UtcDateTime));
+        _yearId = (_years.FirstOrDefault(y => y.Contains(today)) ?? _years.FirstOrDefault())?.Id;
+        await LoadAsync();
+    }
+
+    private async Task ChangeYearAsync(int? yearId)
+    {
+        _yearId = yearId;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var year = _years.FirstOrDefault(y => y.Id == _yearId);
+        if (year is null)
+        {
+            _months = [];
+            return;
+        }
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _months = await new PeriodService(db, Time).MonthsAsync(year);
+    }
+
+    private async Task CloseAsync(DateOnly month)
+    {
+        var parameters = new DialogParameters<ClosePeriodDialog> { { d => d.Month, month } };
+        var dialog = await DialogService.ShowAsync<ClosePeriodDialog>($"Закрыть {PeriodService.MonthName(month)}?", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: string message })
+        {
+            Snackbar.Add(message, Severity.Success);
+        }
+        await LoadAsync(); // и после отмены: в окне могли отметить занятия
+    }
+
+    private async Task OpenAsync(DateOnly month)
+    {
+        var ok = await DialogService.ShowMessageBoxAsync($"Открыть {PeriodService.MonthName(month)}?",
+            "Учителя снова смогут менять и отмечать занятия за этот месяц, а часы в отчётах могут измениться. " +
+            "Не забудьте закрыть месяц, когда исправления будут сделаны.",
+            yesText: "Открыть", cancelText: "Не открывать");
+        if (ok != true)
+        {
+            return;
+        }
+        try
+        {
+            var user = (await AuthState).User;
+            await using var db = await DbFactory.CreateForAsync(user);
+            await new PeriodService(db, Time).OpenAsync(month);
+            Snackbar.Add($"Месяц {PeriodService.MonthName(month)} открыт", Severity.Info);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        await LoadAsync();
+    }
+}

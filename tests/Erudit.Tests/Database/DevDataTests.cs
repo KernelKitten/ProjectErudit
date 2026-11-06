@@ -82,9 +82,11 @@ public class DevDataTests(TestDatabase database)
     public async Task Прошедшие_занятия_отмечены_будущие_запланированы()
     {
         await using var db = database.CreateContext();
+        // Только тестовые данные (год 2026/27): другие тесты кладут свои занятия в «песочные» годы 2070+.
+        var seeded = db.Lessons.Where(l => l.StartsAt < new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc));
 
-        Assert.False(await db.Lessons.AnyAsync(l => l.StartsAt > TestDatabase.Now && l.Status == LessonStatus.Held));
-        Assert.False(await db.Lessons.AnyAsync(l =>
+        Assert.False(await seeded.AnyAsync(l => l.StartsAt > TestDatabase.Now && l.Status == LessonStatus.Held));
+        Assert.False(await seeded.AnyAsync(l =>
             l.StartsAt.AddMinutes(l.DurationMinutes) < TestDatabase.Now && l.Status == LessonStatus.Planned));
     }
 
