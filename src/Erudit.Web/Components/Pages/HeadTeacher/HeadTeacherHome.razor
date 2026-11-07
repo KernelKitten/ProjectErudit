@@ -1,12 +1,32 @@
 @page "/head-teacher"
-@attribute [Authorize(Roles = AppRoles.HeadTeacher)]
+@page "/reports/teachers"
+@attribute [Authorize(Roles = AppRoles.DirectoryManagers)]
+@* Сводка по учителям за период (этап 7, шаг 2): строка на учителя — те же цифры, что в его отчёте
+   (TeacherReportService.SummaryAsync → TeacherReport). Клик по строке — полный отчёт учителя за тот же период. *@
 @using Erudit.Domain.Lessons
+@using Erudit.Domain.School
+@using Erudit.Infrastructure.Lessons
+@inject TeacherReportService ReportService
 @inject IDbContextFactory<EruditDbContext> DbFactory
+@inject NavigationManager Navigation
 
-<PageTitle>Сводка</PageTitle>
+<PageTitle>Сводка по учителям</PageTitle>
 
 <MudText Typo="Typo.h5" GutterBottom>Сводка по учителям</MudText>
-<MudText Typo="Typo.body2" Class="mb-4">Полноценные отчёты с фильтрами и выгрузкой в Excel — этап 7.</MudText>
+
+<MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Start" Class="mb-3">
+    <ReportPeriodPicker From="From" To="To" Changed="PeriodChangedAsync" />
+    <MudSelect T="int?" Value="_subjectId" ValueChanged="SubjectChangedAsync" Label="Предмет" Clearable
+               Placeholder="Все предметы" Style="min-width: 200px; max-width: 260px">
+        @foreach (var s in _subjects)
+        {
+            <MudSelectItem T="int?" Value="s.Id">@s.Name</MudSelectItem>
+        }
+    </MudSelect>
+    <MudSwitch T="bool" Value="_showIdle" ValueChanged="v => _showIdle = v" Color="Color.Primary" Style="align-self: center">
+        Учителя без занятий
+    </MudSwitch>
+</MudStack>
 
 @if (_rows is null)
 {
@@ -14,35 +34,111 @@
 }
 else
 {
-    <MudSimpleTable Dense Hover>
-        <thead><tr><th>Учитель</th><th>Проведено занятий</th><th>Ак. часов</th></tr></thead>
-        <tbody>
-            @foreach (var r in _rows)
-            {
-                <tr><td>@r.Teacher</td><td>@r.Lessons</td><td>@((r.Minutes / 40.0).ToString("0.##"))</td></tr>
-            }
-        </tbody>
-    </MudSimpleTable>
+    <MudTable T="TeacherSummaryRow" Items="Visible" Dense Hover Breakpoint="Breakpoint.Sm" Elevation="0" Outlined
+              OnRowClick="Open" RowStyle="cursor: pointer">
+        <HeaderContent>
+            <MudTh>Учитель</MudTh>
+            <MudTh>Проведено</MudTh>
+            <MudTh>Не состоялось</MudTh>
+            <MudTh>Отменено</MudTh>
+            <MudTh>Не отмечено</MudTh>
+            <MudTh>Инд., ак. ч.</MudTh>
+            <MudTh>Груп., ак. ч.</MudTh>
+            <MudTh>Всего, ак. ч.</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Учитель">
+                @context.Name
+                @if (!context.IsActive)
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">уволен(а)</MudChip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Проведено">@context.Held</MudTd>
+            <MudTd DataLabel="Не состоялось">@context.NotHeld</MudTd>
+            <MudTd DataLabel="Отменено">@context.Cancelled</MudTd>
+            <MudTd DataLabel="Не отмечено">
+                @if (context.Unmarked > 0)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Outlined">@context.Unmarked</MudChip>
+                }
+                else
+                {
+                    <span style="color: #666">—</span>
+                }
+            </MudTd>
+            <MudTd DataLabel="Инд., ак. ч.">@Hours(context.IndividualHours)</MudTd>
+            <MudTd DataLabel="Груп., ак. ч.">@Hours(context.GroupHours)</MudTd>
+            <MudTd DataLabel="Всего, ак. ч."><b>@Hours(context.TotalHours)</b></MudTd>
+        </RowTemplate>
+        <FooterContent>
+            @{ var total = TeacherSummaryRow.Total(Visible); }
+            <MudTd DataLabel="Учитель"><b>Итого</b></MudTd>
+            <MudTd DataLabel="Проведено"><b>@total.Held</b></MudTd>
+            <MudTd DataLabel="Не состоялось"><b>@total.NotHeld</b></MudTd>
+            <MudTd DataLabel="Отменено"><b>@total.Cancelled</b></MudTd>
+            <MudTd DataLabel="Не отмечено"><b>@total.Unmarked</b></MudTd>
+            <MudTd DataLabel="Инд., ак. ч."><b>@Hours(total.IndividualHours)</b></MudTd>
+            <MudTd DataLabel="Груп., ак. ч."><b>@Hours(total.GroupHours)</b></MudTd>
+            <MudTd DataLabel="Всего, ак. ч."><b>@Hours(total.TotalHours)</b></MudTd>
+        </FooterContent>
+        <NoRecordsContent><MudText>За этот период занятий нет.</MudText></NoRecordsContent>
+    </MudTable>
+    <MudText Typo="Typo.caption" Style="color: #666">
+        В часы входят только проведённые занятия; «Всего» включает и проведённые без учеников.
+        1 ак. ч. = @AcademicHours.MinutesPerHour минут, итоги округлены до сотых. Нажмите на учителя — откроется его подробный отчёт.
+    </MudText>
 }
 
 @code {
-    private List<Row>? _rows;
+    [SupplyParameterFromQuery] public DateOnly? From { get; set; }
+    [SupplyParameterFromQuery] public DateOnly? To { get; set; }
 
-    private sealed record Row(string Teacher, int Lessons, int Minutes);
+    private List<Subject> _subjects = [];
+    private int? _subjectId;
+    private bool _showIdle;
+    private (DateOnly From, DateOnly To)? _period;
+    private List<TeacherSummaryRow>? _rows;
+
+    /// <summary>Учителя без единого занятия за период скрыты, пока не включён переключатель.</summary>
+    private List<TeacherSummaryRow> Visible =>
+        _rows?.Where(r => _showIdle || r.Held + r.NotHeld + r.Cancelled + r.Unmarked > 0).ToList() ?? [];
 
     protected override async Task OnInitializedAsync()
     {
         await using var db = await DbFactory.CreateDbContextAsync();
-        var held = await db.Lessons
-            .Where(l => l.Status == LessonStatus.Held)
-            .Select(l => new { l.Teacher.LastName, l.Teacher.FirstName, l.Teacher.MiddleName,
-                Minutes = l.ActualDurationMinutes ?? l.DurationMinutes })
-            .ToListAsync();
-
-        _rows = held
-            .GroupBy(l => $"{l.LastName} {l.FirstName[0]}.{(l.MiddleName is null ? "" : l.MiddleName[0] + ".")}")
-            .Select(g => new Row(g.Key, g.Count(), g.Sum(x => x.Minutes)))
-            .OrderBy(r => r.Teacher)
-            .ToList();
+        _subjects = await db.Subjects.Where(s => s.IsActive).OrderBy(s => s.Name).ToListAsync();
     }
+
+    private async Task PeriodChangedAsync((DateOnly From, DateOnly To) period)
+    {
+        _period = period;
+        await LoadAsync();
+    }
+
+    private async Task SubjectChangedAsync(int? subjectId)
+    {
+        _subjectId = subjectId;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_period is not { } p)
+        {
+            return;
+        }
+        _rows = null;
+        _rows = await ReportService.SummaryAsync(p.From, p.To, _subjectId);
+    }
+
+    private void Open(TableRowClickEventArgs<TeacherSummaryRow> row)
+    {
+        if (row.Item is { } r && _period is { } p)
+        {
+            Navigation.NavigateTo($"teacher/report?teacher={r.TeacherId}&from={p.From:yyyy-MM-dd}&to={p.To:yyyy-MM-dd}");
+        }
+    }
+
+    private static string Hours(decimal hours) => hours.ToString("0.00");
 }

@@ -1,44 +1,38 @@
 @page "/teacher/report"
-@attribute [Authorize(Roles = AppRoles.Teacher)]
+@attribute [Authorize(Roles = AppRoles.Teacher + "," + AppRoles.DirectoryManagers)]
 @* Отчёт учителя за период: итоги в академических часах, занятия, ученики, классы.
-   Подсчёт — Domain/Lessons/TeacherReport. Выгрузка в Excel — на этапе 7. *@
+   Подсчёт — Domain/Lessons/TeacherReport. Учитель видит только свой отчёт; завуч и администратор — любого
+   учителя из сводки (?teacher=12&from=2026-10-01&to=2026-10-31). Выгрузка в Excel — этап 7, шаг 4. *@
 @using Erudit.Domain.Lessons
 @using Erudit.Infrastructure.Lessons
 @inject TeacherReportService ReportService
+@inject IDbContextFactory<EruditDbContext> DbFactory
 @inject IDialogService DialogService
 @inject IBrowserViewportService Viewport
 @inject ISnackbar Snackbar
 
-<PageTitle>Отчёт за период</PageTitle>
+<PageTitle>@(_teacherName is null ? "Отчёт за период" : $"Отчёт: {_teacherName}")</PageTitle>
 
-<MudText Typo="Typo.h5" GutterBottom>Отчёт за период</MudText>
+@if (_isManager)
+{
+    <MudButton Href="@SummaryHref" StartIcon="@Icons.Material.Outlined.ArrowBack" Size="Size.Small" Class="mb-1">Сводка по учителям</MudButton>
+}
+<MudText Typo="Typo.h5" GutterBottom>@(_teacherName is null ? "Отчёт за период" : $"Отчёт учителя: {_teacherName}")</MudText>
+
+@if (_isManager && _teacherId == 0)
+{
+    <MudAlert Severity="Severity.Info">Выберите учителя в <MudLink Href="head-teacher">сводке по учителям</MudLink>.</MudAlert>
+    return;
+}
 
 <MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Start" Class="mb-3">
-    <MudSelect T="int" Value="_periodIndex" ValueChanged="PeriodChangedAsync" Label="Период" Style="min-width: 220px; max-width: 280px">
-        @for (var i = 0; i < _periods.Count; i++)
-        {
-            var index = i;
-            <MudSelectItem T="int" Value="index">@_periods[index].Label</MudSelectItem>
-        }
-        <MudSelectItem T="int" Value="Custom">Любые даты</MudSelectItem>
-    </MudSelect>
-    @if (_periodIndex == Custom)
+    @if (_ready)
     {
-        @* Ширину полей даты задаём обёрткой: Style самого поля сжимает всплывающий календарь. *@
-        <div style="width: 170px">
-            <MudDatePicker Editable Date="_from" DateChanged="d => CustomChangedAsync(d, _to)" Label="С какого дня" />
-        </div>
-        <div style="width: 170px">
-            <MudDatePicker Editable Date="_to" DateChanged="d => CustomChangedAsync(_from, d)" Label="По какой день" />
-        </div>
+        <ReportPeriodPicker From="From" To="To" Changed="PeriodChangedAsync" />
     }
 </MudStack>
 
-@if (_error is not null)
-{
-    <MudAlert Severity="Severity.Warning" Dense>@_error</MudAlert>
-}
-else if (_report is null)
+@if (_report is null)
 {
     <MudProgressLinear Indeterminate />
 }
@@ -147,53 +141,50 @@ else
 @code {
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
 
-    private const int Custom = -1;
+    [SupplyParameterFromQuery] public int? Teacher { get; set; }
+    [SupplyParameterFromQuery] public DateOnly? From { get; set; }
+    [SupplyParameterFromQuery] public DateOnly? To { get; set; }
 
+    private bool _isManager;
     private int _teacherId;
-    private IReadOnlyList<ReportPeriod> _periods = [];
-    private int _periodIndex;
-    private DateTime? _from;
-    private DateTime? _to;
+    private string? _teacherName;
+    private bool _ready;
+    private (DateOnly From, DateOnly To)? _period;
     private TeacherReport? _report;
-    private string? _error;
+
+    /// <summary>Назад в сводку — с тем же периодом.</summary>
+    private string SummaryHref => _period is { } p ? $"head-teacher?from={p.From:yyyy-MM-dd}&to={p.To:yyyy-MM-dd}" : "head-teacher";
 
     protected override async Task OnInitializedAsync()
     {
-        _teacherId = (await AuthState).User.GetPersonId() ?? 0;
-        _periods = await ReportService.PeriodsAsync();
-        // Период по умолчанию — текущий месяц (первый в списке).
-        var current = _periods[0];
-        (_from, _to) = (current.From.ToDateTime(TimeOnly.MinValue), current.To.ToDateTime(TimeOnly.MinValue));
-        await LoadAsync();
-    }
-
-    private async Task PeriodChangedAsync(int index)
-    {
-        _periodIndex = index;
-        if (index != Custom)
+        var user = (await AuthState).User;
+        // Чужой отчёт — только в роли завуча или администратора; учитель всегда видит свой.
+        _isManager = user.IsInRole(AppRoles.HeadTeacher) || user.IsInRole(AppRoles.Admin);
+        _teacherId = _isManager ? Teacher ?? 0 : user.GetPersonId() ?? 0;
+        if (_isManager && _teacherId != 0)
         {
-            (_from, _to) = (_periods[index].From.ToDateTime(TimeOnly.MinValue), _periods[index].To.ToDateTime(TimeOnly.MinValue));
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var t = await db.People.Where(p => p.Id == _teacherId)
+                .Select(p => new { p.LastName, p.FirstName, p.MiddleName }).SingleOrDefaultAsync();
+            _teacherName = t is null ? "не найден" : Domain.People.Person.Short(t.LastName, t.FirstName, t.MiddleName);
         }
-        await LoadAsync();
+        _ready = true;
     }
 
-    private async Task CustomChangedAsync(DateTime? from, DateTime? to)
+    private async Task PeriodChangedAsync((DateOnly From, DateOnly To) period)
     {
-        (_from, _to) = (from, to);
+        _period = period;
         await LoadAsync();
     }
 
     private async Task LoadAsync()
     {
-        _error = _from is null || _to is null ? "Укажите обе даты."
-            : _from > _to ? "Начало периода позже конца."
-            : null;
-        if (_error is not null)
+        if (_period is not { } p || _teacherId == 0)
         {
             return;
         }
         _report = null;
-        _report = await ReportService.LoadAsync(_teacherId, DateOnly.FromDateTime(_from!.Value), DateOnly.FromDateTime(_to!.Value));
+        _report = await ReportService.LoadAsync(_teacherId, p.From, p.To);
     }
 
     /// <summary>Клик по строке — карточка занятия: там его можно отметить; изменилось — пересчитываем отчёт.</summary>

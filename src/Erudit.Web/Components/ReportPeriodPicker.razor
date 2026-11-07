@@ -1,0 +1,88 @@
+@* Выбор периода для отчётов: месяцы учебного года, четверти, весь год или «Любые даты».
+   Сообщает выбранный период через Changed — и сразу после загрузки списка (период по умолчанию). *@
+@using Erudit.Infrastructure.Lessons
+@inject TeacherReportService ReportService
+
+<MudSelect T="int" Value="_index" ValueChanged="IndexChangedAsync" Label="Период" Style="min-width: 220px; max-width: 280px">
+    @for (var i = 0; i < _periods.Count; i++)
+    {
+        var index = i;
+        <MudSelectItem T="int" Value="index">@_periods[index].Label</MudSelectItem>
+    }
+    <MudSelectItem T="int" Value="Custom">Любые даты</MudSelectItem>
+</MudSelect>
+@if (_index == Custom)
+{
+    @* Ширину полей даты задаём обёрткой: Style самого поля сжимает всплывающий календарь. *@
+    <div style="width: 170px">
+        <MudDatePicker Editable Date="_from" DateChanged="d => DatesChangedAsync(d, _to)" Label="С какого дня" />
+    </div>
+    <div style="width: 170px">
+        <MudDatePicker Editable Date="_to" DateChanged="d => DatesChangedAsync(_from, d)" Label="По какой день" />
+    </div>
+}
+@if (_error is not null)
+{
+    <MudAlert Severity="Severity.Warning" Dense Style="align-self: center">@_error</MudAlert>
+}
+
+@code {
+    private const int Custom = -1;
+
+    /// <summary>Начальный период (например, из адреса страницы); нет — текущий месяц.</summary>
+    [Parameter] public DateOnly? From { get; set; }
+    [Parameter] public DateOnly? To { get; set; }
+
+    [Parameter] public EventCallback<(DateOnly From, DateOnly To)> Changed { get; set; }
+
+    private IReadOnlyList<ReportPeriod> _periods = [];
+    private int _index;
+    private DateTime? _from;
+    private DateTime? _to;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _periods = await ReportService.PeriodsAsync();
+        if (From is { } from && To is { } to)
+        {
+            // Есть в списке — выбираем его, иначе «Любые даты».
+            var found = _periods.Select((p, i) => (p, i)).FirstOrDefault(x => x.p.From == from && x.p.To == to);
+            _index = found.p is null ? Custom : found.i;
+            (_from, _to) = (from.ToDateTime(TimeOnly.MinValue), to.ToDateTime(TimeOnly.MinValue));
+        }
+        else
+        {
+            _index = 0; // текущий месяц — первый в списке
+            (_from, _to) = (_periods[0].From.ToDateTime(TimeOnly.MinValue), _periods[0].To.ToDateTime(TimeOnly.MinValue));
+        }
+        await NotifyAsync();
+    }
+
+    private async Task IndexChangedAsync(int index)
+    {
+        _index = index;
+        if (index != Custom)
+        {
+            (_from, _to) = (_periods[index].From.ToDateTime(TimeOnly.MinValue), _periods[index].To.ToDateTime(TimeOnly.MinValue));
+        }
+        await NotifyAsync();
+    }
+
+    private async Task DatesChangedAsync(DateTime? from, DateTime? to)
+    {
+        (_from, _to) = (from, to);
+        await NotifyAsync();
+    }
+
+    private async Task NotifyAsync()
+    {
+        _error = _from is null || _to is null ? "Укажите обе даты."
+            : _from > _to ? "Начало периода позже конца."
+            : null;
+        if (_error is null)
+        {
+            await Changed.InvokeAsync((DateOnly.FromDateTime(_from!.Value), DateOnly.FromDateTime(_to!.Value)));
+        }
+    }
+}

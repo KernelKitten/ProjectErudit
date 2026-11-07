@@ -186,4 +186,58 @@ public class TeacherReportTests(TestDatabase database)
         Assert.Equal(["Октябрь 2077", "Сентябрь 2077", $"Учебный год {year.Name}"], periods.Select(p => p.Label));
         Assert.Equal((new DateOnly(2077, 10, 1), new DateOnly(2077, 10, 31)), (periods[0].From, periods[0].To));
     }
+
+    /// <summary>Сводка завуча (этап 7, шаг 2): цифры — те же, что в отчёте учителя; фильтр по предмету; уволенные — только с занятиями.</summary>
+    [DatabaseFact]
+    public async Task Сводка_завуча__как_отчёт_учителя__предмет__уволенные()
+    {
+        var year = await database.CreateSandboxYearAsync(2097);
+        await using var db = database.CreateContext();
+        Person New(string last, Role role, bool active = true) =>
+            new() { LastName = last, FirstName = "Тест", IsActive = active, Roles = [new PersonRole { Role = role }] };
+        var teacher = New("Учитель2097", Role.Teacher);
+        var firedWithLessons = New("Уволен2097", Role.Teacher, active: false);
+        var firedIdle = New("УволенБезЗанятий2097", Role.Teacher, active: false);
+        var (a, b) = (New("УченикА2097", Role.Student), New("УченикБ2097", Role.Student));
+        var (math, art) = (new Subject { Name = "Матем 2097" }, new Subject { Name = "Рисование 2097" });
+        var room = new Room { Name = "Каб.2097" };
+        db.AddRange(teacher, firedWithLessons, firedIdle, a, b, math, art, room);
+
+        var day = new DateOnly(2097, 9, 10);
+        Lesson At(Person who, Subject subject, int hour, LessonStatus status, params Person[] students) => new()
+        {
+            Teacher = who, Subject = subject, Room = room, StartsAt = SchoolTime.ToUtc(day, new TimeOnly(hour, 0)), DurationMinutes = 40,
+            Capacity = 5, Status = status,
+            Enrollments = [.. students.Select(s => new Enrollment { Student = s, Source = EnrollmentSource.Teacher, Attendance = Attendance.Present })],
+        };
+        db.AddRange(
+            At(teacher, math, 9, LessonStatus.Held, a),          // индивидуальное
+            At(teacher, math, 10, LessonStatus.Held, a, b),      // групповое
+            At(teacher, art, 11, LessonStatus.Held),             // без учеников — только во «Всего»
+            At(teacher, art, 12, LessonStatus.NotHeld, a),
+            At(teacher, art, 13, LessonStatus.Cancelled, a),
+            At(teacher, math, 14, LessonStatus.Planned, a),      // закончилось, не отмечено
+            At(firedWithLessons, math, 15, LessonStatus.Held, b));
+        await db.SaveChangesAsync();
+
+        var service = new TeacherReportService(database.CreateFactory(), new FixedTime(SchoolTime.ToUtc(day, new TimeOnly(20, 0))));
+        var all = await service.SummaryAsync(day, day, subjectId: null);
+
+        var row = all.Single(r => r.TeacherId == teacher.Id);
+        Assert.Equal("Учитель2097 Т.", row.Name);
+        Assert.Equal((3, 1, 1, 1), (row.Held, row.NotHeld, row.Cancelled, row.Unmarked));
+        Assert.Equal((1m, 1m, 3m), (row.IndividualHours, row.GroupHours, row.TotalHours));
+        var report = await service.LoadAsync(teacher.Id, day, day);
+        Assert.Equal(report.TotalMinutes, row.TotalMinutes); // та же логика, что в отчёте учителя
+
+        Assert.False(all.Single(r => r.TeacherId == firedWithLessons.Id).IsActive);
+        Assert.DoesNotContain(all, r => r.TeacherId == firedIdle.Id);
+        Assert.Contains(all, r => r.IsActive && r.Held == 0); // работающие учителя без занятий тоже в списке
+
+        var mathOnly = (await service.SummaryAsync(day, day, math.Id)).Single(r => r.TeacherId == teacher.Id);
+        Assert.Equal((2, 0, 0, 1, 2m), (mathOnly.Held, mathOnly.NotHeld, mathOnly.Cancelled, mathOnly.Unmarked, mathOnly.TotalHours));
+
+        var total = TeacherSummaryRow.Total([row, all.Single(r => r.TeacherId == firedWithLessons.Id)]);
+        Assert.Equal((4, 4m), (total.Held, total.TotalHours));
+    }
 }

@@ -63,6 +63,23 @@ public sealed record ReportClassRow(string? ClassName, int Students, int Attende
 }
 
 /// <summary>
+/// Учитель в сводке завуча. Часы «Всего» включают и проведённые занятия без учеников,
+/// поэтому могут быть больше суммы индивидуальных и групповых.
+/// </summary>
+public sealed record TeacherSummaryRow(int TeacherId, string Name, bool IsActive,
+    int Held, int NotHeld, int Cancelled, int Unmarked, int IndividualMinutes, int GroupMinutes, int TotalMinutes)
+{
+    public decimal IndividualHours => AcademicHours.FromMinutes(IndividualMinutes);
+    public decimal GroupHours => AcademicHours.FromMinutes(GroupMinutes);
+    public decimal TotalHours => AcademicHours.FromMinutes(TotalMinutes);
+
+    /// <summary>Итоговая строка: минуты складываем, часы считаем из суммы минут (округляется только итог).</summary>
+    public static TeacherSummaryRow Total(IReadOnlyCollection<TeacherSummaryRow> rows) => new(0, "Итого", true,
+        rows.Sum(r => r.Held), rows.Sum(r => r.NotHeld), rows.Sum(r => r.Cancelled), rows.Sum(r => r.Unmarked),
+        rows.Sum(r => r.IndividualMinutes), rows.Sum(r => r.GroupMinutes), rows.Sum(r => r.TotalMinutes));
+}
+
+/// <summary>
 /// Отчёт учителя за период. Чистая логика без базы. В часы идут только проведённые занятия:
 /// групповое занятие на 1 час с 5 учениками — у учителя 1 час и у каждого пришедшего ученика 1 час.
 /// </summary>
@@ -124,6 +141,13 @@ public sealed class TeacherReport
             TotalMinutes = held.Sum(l => l.Minutes),
         };
     }
+
+    /// <summary>Строка сводки завуча: итоги этого отчёта одной строкой.</summary>
+    public TeacherSummaryRow ToSummary(int teacherId, string name, bool isActive) => new(teacherId, name, isActive,
+        Held, NotHeld, Cancelled, Unmarked,
+        Kinds.Where(k => k.Kind == ReportLessonKind.Individual).Sum(k => k.Minutes),
+        Kinds.Where(k => k.Kind == ReportLessonKind.Group).Sum(k => k.Minutes),
+        TotalMinutes);
 
     /// <summary>«9а» раньше «10»: дополняем номер нулями, чтобы сортировка строк шла как по числам.</summary>
     private static string ClassSortKey(string? name) => (name ?? "").PadLeft(name is { Length: > 0 } && char.IsDigit(name[^1]) ? 2 : 3, '0');
