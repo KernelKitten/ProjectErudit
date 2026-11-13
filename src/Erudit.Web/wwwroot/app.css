@@ -1,3 +1,40 @@
+/* Свои цвета (подложки дней и занятий в календаре и сетке недели). Светлая тема — здесь,
+   тёмная — в .erudit-dark (класс на обёртке MainLayout). Нейтральные цвета (текст, линии, фон)
+   берём из палитры MudBlazor: --mud-palette-text-secondary, --mud-palette-lines-default, --mud-palette-surface. */
+:root {
+    --erudit-accent: #1F3864;
+    --erudit-red-bg: #fdecea;
+    --erudit-red-border: #e0a0a0;
+    --erudit-red: #c62828;
+    --erudit-yellow-bg: #fff4d6;
+    --erudit-yellow-border: #f0b429;
+    --erudit-yellow-text: #8a6d00;
+    --erudit-blue-bg: #e8eef8;
+    --erudit-green-bg: #e8f5e9;
+    --erudit-green: #2e7d32;
+    --erudit-orange-bg: #fff3e0;
+    --erudit-orange: #ef6c00;
+    --erudit-grey-bg: #f5f5f5;
+    --erudit-muted: #9e9e9e;
+}
+
+.erudit-dark {
+    --erudit-accent: #8fb0e8;
+    --erudit-red-bg: #4a2427;
+    --erudit-red-border: #8c4a4a;
+    --erudit-red: #ef9a9a;
+    --erudit-yellow-bg: #463a16;
+    --erudit-yellow-border: #c9951f;
+    --erudit-yellow-text: #f0c75e;
+    --erudit-blue-bg: #24344f;
+    --erudit-green-bg: #1f3a24;
+    --erudit-green: #81c784;
+    --erudit-orange-bg: #4a3218;
+    --erudit-orange: #ffb74d;
+    --erudit-grey-bg: #2c2c30;
+    --erudit-muted: #8a8a8a;
+}
+
 h1:focus {
     outline: none;
 }

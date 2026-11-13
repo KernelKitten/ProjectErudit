@@ -1,0 +1,29 @@
+@* Значок темы в шапке: как в системе → светлая → тёмная → как в системе. Выбор запоминается в cookie браузера. *@
+@inject ThemeState Theme
+@inject IJSRuntime JS
+
+<MudTooltip Text="@Tooltip">
+    <MudIconButton Icon="@Icon" Color="Color.Inherit" OnClick="ToggleAsync" aria-label="@Tooltip" />
+</MudTooltip>
+
+@code {
+    private string Icon => Theme.Mode switch
+    {
+        ThemeMode.Light => Icons.Material.Outlined.LightMode,
+        ThemeMode.Dark => Icons.Material.Outlined.DarkMode,
+        _ => Icons.Material.Outlined.BrightnessAuto,
+    };
+
+    private string Tooltip => Theme.Mode switch
+    {
+        ThemeMode.Light => "Тема: светлая",
+        ThemeMode.Dark => "Тема: тёмная",
+        _ => "Тема: как в системе",
+    };
+
+    private async Task ToggleAsync()
+    {
+        Theme.SetMode(ThemeState.Next(Theme.Mode));
+        await JS.InvokeVoidAsync("erudit.setCookie", ThemeState.ModeCookie, Theme.Mode.ToString().ToLowerInvariant());
+    }
+}

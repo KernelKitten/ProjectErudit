@@ -12,6 +12,9 @@ namespace Erudit.Web.Auth;
 public static class EruditClaims
 {
     public const string AvailableRole = "erudit:available_role";
+
+    /// <summary>Вошёл по временному паролю — пока не сменит, сайт показывает только страницу смены пароля.</summary>
+    public const string MustChangePassword = "erudit:must_change_password";
 }
 
 public static class ClaimsPrincipalExtensions

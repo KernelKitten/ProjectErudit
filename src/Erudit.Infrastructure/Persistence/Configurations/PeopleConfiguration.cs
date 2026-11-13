@@ -46,3 +46,13 @@ public class ParentLinkConfiguration : IEntityTypeConfiguration<ParentLink>
         b.HasIndex(l => l.StudentId);
     }
 }
+
+public class PersonPasswordConfiguration : IEntityTypeConfiguration<PersonPassword>
+{
+    public void Configure(EntityTypeBuilder<PersonPassword> b)
+    {
+        b.HasKey(p => p.PersonId); // одна строка на человека
+        b.Property(p => p.Hash).HasMaxLength(200);
+        b.HasOne(p => p.Person).WithOne().HasForeignKey<PersonPassword>(p => p.PersonId).OnDelete(DeleteBehavior.Restrict);
+    }
+}

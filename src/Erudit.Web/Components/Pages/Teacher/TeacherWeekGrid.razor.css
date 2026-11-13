@@ -3,9 +3,9 @@
 
 /* Неотмеченные занятия над сеткой. */
 .erudit-unmarked {
-    border: 1px solid #e0a0a0;
+    border: 1px solid var(--erudit-red-border);
     border-radius: 6px;
-    background: #fdecea;
+    background: var(--erudit-red-bg);
     padding: 6px 10px;
     margin-bottom: 8px;
 }
@@ -41,7 +41,7 @@
 
 .erudit-week-table th {
     font-weight: 500;
-    color: #555;
+    color: var(--mud-palette-text-secondary);
     padding: 4px;
     text-align: center;
 }
@@ -64,14 +64,14 @@
 
 .erudit-week-time {
     font-size: 0.75rem;
-    color: #888;
+    color: var(--erudit-muted);
     font-weight: 400;
 }
 
 .erudit-week-table td {
-    border: 1px solid #e0e0e0;
+    border: 1px solid var(--mud-palette-lines-default);
     border-radius: 6px;
-    background: #fff;
+    background: var(--mud-palette-surface);
     height: 64px;
     vertical-align: top;
     padding: 2px;
@@ -83,8 +83,8 @@
 }
 
 .erudit-week-table td.erudit-week-empty:hover {
-    background: #e8eef8;
-    border-color: #1F3864;
+    background: var(--erudit-blue-bg);
+    border-color: var(--erudit-accent);
 }
 
 .erudit-week-table td.erudit-week-empty:hover::after {
@@ -93,48 +93,48 @@
     text-align: center;
     font-size: 1.5rem;
     line-height: 56px;
-    color: #1F3864;
+    color: var(--erudit-accent);
 }
 
 /* Дни: нерабочий, каникулы, сегодня. */
 .erudit-week-off td,
 .erudit-week-off.erudit-week-list-day {
-    background: #fdecea;
+    background: var(--erudit-red-bg);
 }
 
 .erudit-week-vacation td,
 .erudit-week-vacation.erudit-week-list-day {
-    background: #fff4d6;
-    border-color: #f0b429;
+    background: var(--erudit-yellow-bg);
+    border-color: var(--erudit-yellow-border);
 }
 
 .erudit-week-off.erudit-week-vacation td,
 .erudit-week-off.erudit-week-vacation.erudit-week-list-day {
-    background: linear-gradient(135deg, #fdecea 50%, #fff4d6 50%);
+    background: linear-gradient(135deg, var(--erudit-red-bg) 50%, var(--erudit-yellow-bg) 50%);
 }
 
 .erudit-week-vacation-part td,
 .erudit-week-vacation-part.erudit-week-list-day {
-    border: 2px dashed #f0b429;
+    border: 2px dashed var(--erudit-yellow-border);
 }
 
 .erudit-week-today th.erudit-week-day {
-    color: #1F3864;
+    color: var(--erudit-accent);
     font-weight: 700;
 }
 
 .erudit-week-today td {
-    border-color: #1F3864;
+    border-color: var(--erudit-accent);
 }
 
 .erudit-week-today.erudit-week-list-day {
-    border: 2px solid #1F3864;
+    border: 2px solid var(--erudit-accent);
 }
 
 /* Занятие в клетке. */
 .erudit-lesson {
-    background: #e8eef8;
-    border-left: 3px solid #1F3864;
+    background: var(--erudit-blue-bg);
+    border-left: 3px solid var(--erudit-accent);
     border-radius: 4px;
     padding: 2px 6px;
     margin-bottom: 2px;
@@ -160,7 +160,7 @@
 
 .erudit-lesson-meta {
     font-size: 0.75rem;
-    color: #555;
+    color: var(--mud-palette-text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -173,29 +173,29 @@
 }
 
 .erudit-lesson-unmarked {
-    border-left-color: #c62828;
-    background: #fdecea;
+    border-left-color: var(--erudit-red);
+    background: var(--erudit-red-bg);
 }
 
 .erudit-lesson-held {
-    border-left-color: #2e7d32;
-    background: #e8f5e9;
+    border-left-color: var(--erudit-green);
+    background: var(--erudit-green-bg);
 }
 
 .erudit-lesson-notheld {
-    border-left-color: #ef6c00;
-    background: #fff3e0;
+    border-left-color: var(--erudit-orange);
+    background: var(--erudit-orange-bg);
 }
 
 .erudit-lesson-cancelled {
-    border-left-color: #9e9e9e;
-    background: #f5f5f5;
-    color: #9e9e9e;
+    border-left-color: var(--erudit-muted);
+    background: var(--erudit-grey-bg);
+    color: var(--erudit-muted);
     text-decoration: line-through;
 }
 
 .erudit-lesson-cancelled .erudit-lesson-meta {
-    color: #9e9e9e;
+    color: var(--erudit-muted);
 }
 
 /* Телефон: вместо сетки — список по дням. */
@@ -204,11 +204,11 @@
 }
 
 .erudit-week-list-day {
-    border: 1px solid #e0e0e0;
+    border: 1px solid var(--mud-palette-lines-default);
     border-radius: 6px;
     padding: 6px 8px;
     margin-bottom: 8px;
-    background: #fff;
+    background: var(--mud-palette-surface);
 }
 
 .erudit-week-list-head {
@@ -225,7 +225,7 @@
 }
 
 .erudit-week-list-empty {
-    color: #999;
+    color: var(--erudit-muted);
     font-size: 0.85rem;
 }
 

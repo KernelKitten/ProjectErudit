@@ -15,7 +15,9 @@
 </head>
 
 <body>
-    <Routes @rendermode="InteractiveServer" />
+    @* Тема из cookie — уже здесь, при отрисовке на сервере, иначе страница мелькнула бы белым. *@
+    <Routes @rendermode="InteractiveServer" ThemeMode="@ThemeState.Parse(HttpContext?.Request.Cookies[ThemeState.ModeCookie])"
+            SystemDark="@(HttpContext?.Request.Cookies[ThemeState.SystemCookie] == "dark")" />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
     <script src="@Assets["_content/MudBlazor/MudBlazor.min.js"]"></script>
@@ -23,3 +25,8 @@
 </body>
 
 </html>
+
+@code {
+    /// <summary>Есть только при отрисовке на сервере (App — статический корень страницы).</summary>
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+}

@@ -1,10 +1,10 @@
 .erudit-day-note {
     font-size: 0.72rem;
     font-weight: 400;
-    color: #8a6d00;
+    color: var(--erudit-yellow-text);
     line-height: 1.2;
 }
 
 .erudit-day-note-off {
-    color: #c62828;
+    color: var(--erudit-red);
 }

@@ -9,7 +9,7 @@
 .erudit-month-head {
     text-align: center;
     font-weight: 500;
-    color: #666;
+    color: var(--mud-palette-text-secondary);
     padding: 4px 0;
 }
 
@@ -17,34 +17,34 @@
     position: relative;
     aspect-ratio: 1.2;
     min-width: 0;
-    border: 1px solid #e0e0e0;
+    border: 1px solid var(--mud-palette-lines-default);
     border-radius: 6px;
     padding: 4px 6px;
-    background: #fff;
+    background: var(--mud-palette-surface);
     cursor: pointer;
     font-size: 1.05rem;
 }
 
 .erudit-day-off {
-    color: #c62828;
-    background: #fdecea;
+    color: var(--erudit-red);
+    background: var(--erudit-red-bg);
 }
 
 .erudit-vacation {
-    background: #fff4d6;
-    border-color: #f0b429;
+    background: var(--erudit-yellow-bg);
+    border-color: var(--erudit-yellow-border);
 }
 
 .erudit-day-off.erudit-vacation {
-    background: linear-gradient(135deg, #fdecea 50%, #fff4d6 50%);
+    background: linear-gradient(135deg, var(--erudit-red-bg) 50%, var(--erudit-yellow-bg) 50%);
 }
 
 .erudit-vacation-part {
-    border: 2px dashed #f0b429;
+    border: 2px dashed var(--erudit-yellow-border);
 }
 
 .erudit-today {
-    outline: 2px solid #1F3864;
+    outline: 2px solid var(--erudit-accent);
 }
 
 ::deep .erudit-day-manual {

@@ -18,3 +18,13 @@
         <FocusOnNavigate RouteData="routeData" Selector="h1" />
     </Found>
 </Router>
+
+@code {
+    [Inject] private ThemeState Theme { get; set; } = null!;
+
+    /// <summary>Тема из cookie (App.razor). Параметры корня доходят и до пререндера, и до живой сессии SignalR.</summary>
+    [Parameter] public ThemeMode ThemeMode { get; set; }
+    [Parameter] public bool SystemDark { get; set; }
+
+    protected override void OnInitialized() => Theme.Init(ThemeMode, SystemDark);
+}

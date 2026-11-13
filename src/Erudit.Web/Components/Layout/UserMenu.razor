@@ -33,6 +33,10 @@
                     }
                     <MudDivider Class="my-1" />
                 }
+                @if (auth.User.GetAvailableRoles().Any(r => r is AppRoles.Teacher or AppRoles.HeadTeacher or AppRoles.Admin))
+                {
+                    <MudMenuItem Href="account/password" Icon="@Icons.Material.Outlined.Key">Пароль для входа</MudMenuItem>
+                }
                 <form method="post" action="auth/logout">
                     <AntiforgeryToken />
                     <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Text" FullWidth

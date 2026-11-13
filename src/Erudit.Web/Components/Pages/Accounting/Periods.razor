@@ -51,14 +51,14 @@ else
                 }
                 else
                 {
-                    <span style="color: #666">—</span>
+                    <span style="color: var(--mud-palette-text-secondary)">—</span>
                 }
             </MudTd>
             <MudTd DataLabel="Состояние">
                 @if (context.Closed is { } closed)
                 {
                     <MudChip T="string" Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Outlined.Lock">Закрыт</MudChip>
-                    <span style="color: #666">@SchoolTime.ToSchool(closed.AtUtc).ToString("dd.MM.yyyy"), @closed.By</span>
+                    <span style="color: var(--mud-palette-text-secondary)">@SchoolTime.ToSchool(closed.AtUtc).ToString("dd.MM.yyyy"), @closed.By</span>
                 }
                 else if (context.Ended)
                 {
@@ -66,11 +66,11 @@ else
                 }
                 else if (context.Held + context.NotHeld + context.Unmarked > 0)
                 {
-                    <span style="color: #666">Идёт (впереди @context.Upcoming)</span>
+                    <span style="color: var(--mud-palette-text-secondary)">Идёт (впереди @context.Upcoming)</span>
                 }
                 else
                 {
-                    <span style="color: #666">Впереди</span>
+                    <span style="color: var(--mud-palette-text-secondary)">Впереди</span>
                 }
             </MudTd>
             <MudTd>

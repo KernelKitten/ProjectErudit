@@ -1,34 +1,42 @@
 ﻿@inherits LayoutComponentBase
+@implements IDisposable
+@inject ThemeState Theme
+@inject IJSRuntime JS
 
-@* Провайдеры MudBlazor: тема, всплывающие меню, диалоги, уведомления-«тосты». *@
-<MudThemeProvider Theme="_theme" />
-<MudPopoverProvider />
-<MudDialogProvider />
-<MudSnackbarProvider />
+@* Обёртка с классом erudit-dark переключает наши цвета (app.css) вместе с темой MudBlazor.
+   Провайдеры MudBlazor (всплывающие меню, диалоги) — внутри неё, чтобы и они получили тёмные цвета. *@
+<div class="@(Theme.IsDark ? "erudit-dark" : null)">
+    <MudThemeProvider @ref="_provider" Theme="_theme" IsDarkMode="Theme.IsDark" />
+    <MudPopoverProvider />
+    <MudDialogProvider />
+    <MudSnackbarProvider />
 
-<MudLayout>
-    <MudAppBar Elevation="1">
+    <MudLayout>
+        <MudAppBar Elevation="1">
+            <AuthorizeView>
+                <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
+                               OnClick="() => _drawerOpen = !_drawerOpen" aria-label="Меню" />
+            </AuthorizeView>
+            <MudText Typo="Typo.h6" Class="ml-2">Эрудит · доп. занятия</MudText>
+            <MudSpacer />
+            <ThemeToggle />
+            <UserMenu />
+        </MudAppBar>
+
         <AuthorizeView>
-            <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
-                           OnClick="() => _drawerOpen = !_drawerOpen" aria-label="Меню" />
+            <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="1">
+                <NavMenu />
+            </MudDrawer>
         </AuthorizeView>
-        <MudText Typo="Typo.h6" Class="ml-2">Эрудит · доп. занятия</MudText>
-        <MudSpacer />
-        <UserMenu />
-    </MudAppBar>
 
-    <AuthorizeView>
-        <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="1">
-            <NavMenu />
-        </MudDrawer>
-    </AuthorizeView>
-
-    <MudMainContent>
-        <MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
-            @Body
-        </MudContainer>
-    </MudMainContent>
-</MudLayout>
+        <MudMainContent>
+            <MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+                <MustChangePasswordGuard />
+                @Body
+            </MudContainer>
+        </MudMainContent>
+    </MudLayout>
+</div>
 
 <div id="blazor-error-ui" data-nosnippet>
     Произошла ошибка.
@@ -38,6 +46,7 @@
 
 @code {
     private bool _drawerOpen = true;
+    private MudThemeProvider? _provider;
 
     private readonly MudTheme _theme = new()
     {
@@ -46,5 +55,42 @@
             Primary = "#1F3864",
             AppbarBackground = "#1F3864",
         },
+        // Тёмная: шапка того же школьного синего, основной цвет светлее — тёмно-синий на тёмном фоне не читается.
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#8fb0e8",
+            PrimaryContrastText = "#0d1b33", // текст на основных кнопках: белый на светло-синем не читается
+            AppbarBackground = "#1a2c4f",
+        },
     };
+
+    protected override void OnInitialized() => Theme.Changed += OnThemeChanged;
+
+    /// <summary>
+    /// Тёмная ли тема в системе, узнаём только в браузере. Запоминаем в cookie — при следующем открытии
+    /// сервер сразу нарисует страницу в нужных цветах; меняется в системе — меняем и здесь.
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _provider is null)
+        {
+            return;
+        }
+        await SystemDarkChangedAsync(await _provider.GetSystemDarkModeAsync());
+        await _provider.WatchSystemDarkModeAsync(SystemDarkChangedAsync);
+    }
+
+    private async Task SystemDarkChangedAsync(bool dark)
+    {
+        if (dark == Theme.SystemDark)
+        {
+            return;
+        }
+        Theme.SetSystemDark(dark);
+        await JS.InvokeVoidAsync("erudit.setCookie", ThemeState.SystemCookie, dark ? "dark" : "light");
+    }
+
+    private void OnThemeChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Theme.Changed -= OnThemeChanged;
 }

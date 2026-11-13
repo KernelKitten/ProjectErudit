@@ -19,9 +19,11 @@ public sealed class SignInService(IDbContextFactory<EruditDbContext> dbFactory, 
     /// </summary>
     /// <param name="persistent">true — вход на 30 дней; false — до закрытия браузера («чужой компьютер»).</param>
     /// <param name="activeRole">Какую роль сделать активной; если не задана или недоступна — первая по приоритету.</param>
-    public async Task<string?> SignInAsync(HttpContext http, int personId, bool persistent, string? activeRole = null)
+    /// <param name="mustChangePassword">Вошёл по временному паролю — сначала смена пароля.</param>
+    public async Task<string?> SignInAsync(HttpContext http, int personId, bool persistent, string? activeRole = null,
+        bool mustChangePassword = false)
     {
-        var principal = await BuildPrincipalAsync(personId, activeRole);
+        var principal = await BuildPrincipalAsync(personId, activeRole, mustChangePassword);
         if (principal is null)
         {
             return null;
@@ -29,7 +31,7 @@ public sealed class SignInService(IDbContextFactory<EruditDbContext> dbFactory, 
 
         await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal,
             new AuthenticationProperties { IsPersistent = persistent });
-        return AppRoles.HomePage(principal.GetActiveRole()!);
+        return mustChangePassword ? "/account/password" : AppRoles.HomePage(principal.GetActiveRole()!);
     }
 
     /// <summary>
@@ -44,10 +46,22 @@ public sealed class SignInService(IDbContextFactory<EruditDbContext> dbFactory, 
         }
         var current = await http.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         var persistent = current.Properties?.IsPersistent ?? false;
-        return await SignInAsync(http, personId.Value, persistent, role);
+        return await SignInAsync(http, personId.Value, persistent, role, http.User.HasClaim(c => c.Type == EruditClaims.MustChangePassword));
     }
 
-    private async Task<ClaimsPrincipal?> BuildPrincipalAsync(int personId, string? activeRole)
+    /// <summary>Пароль сменён — выдаём cookie заново без отметки «сменить пароль», с той же ролью и «запомнить меня».</summary>
+    public async Task RefreshAsync(HttpContext http)
+    {
+        var personId = http.User.GetPersonId();
+        if (personId is null)
+        {
+            return;
+        }
+        var current = await http.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        await SignInAsync(http, personId.Value, current.Properties?.IsPersistent ?? false, http.User.GetActiveRole());
+    }
+
+    private async Task<ClaimsPrincipal?> BuildPrincipalAsync(int personId, string? activeRole, bool mustChangePassword)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
 
@@ -84,6 +98,10 @@ public sealed class SignInService(IDbContextFactory<EruditDbContext> dbFactory, 
             new(ClaimTypes.Role, active),
         };
         claims.AddRange(available.Select(r => new Claim(EruditClaims.AvailableRole, r)));
+        if (mustChangePassword)
+        {
+            claims.Add(new Claim(EruditClaims.MustChangePassword, "1"));
+        }
 
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         return new ClaimsPrincipal(identity);

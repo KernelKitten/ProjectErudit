@@ -79,6 +79,7 @@ public static class DependencyInjection
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<BotUpdateHandler>();
         services.AddScoped<PersonRegistration>();
+        services.AddScoped<PasswordService>();
         services.AddScoped<TeacherService>();
         services.AddScoped<StudentService>();
         services.AddScoped<DataCheckService>();

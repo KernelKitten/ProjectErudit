@@ -687,6 +687,40 @@ namespace Erudit.Infrastructure.Persistence.Migrations
                     b.ToTable("people", (string)null);
                 });
 
+            modelBuilder.Entity("Erudit.Domain.People.PersonPassword", b =>
+                {
+                    b.Property<int>("PersonId")
+                        .HasColumnType("integer")
+                        .HasColumnName("person_id");
+
+                    b.Property<DateTime>("ChangedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("changed_at");
+
+                    b.Property<int>("FailedCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("failed_count");
+
+                    b.Property<string>("Hash")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("hash");
+
+                    b.Property<DateTime?>("LockedUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("locked_until");
+
+                    b.Property<bool>("MustChange")
+                        .HasColumnType("boolean")
+                        .HasColumnName("must_change");
+
+                    b.HasKey("PersonId")
+                        .HasName("pk_person_passwords");
+
+                    b.ToTable("person_passwords", (string)null);
+                });
+
             modelBuilder.Entity("Erudit.Domain.People.PersonRole", b =>
                 {
                     b.Property<int>("PersonId")
@@ -1121,6 +1155,18 @@ namespace Erudit.Infrastructure.Persistence.Migrations
                     b.Navigation("Parent");
 
                     b.Navigation("Student");
+                });
+
+            modelBuilder.Entity("Erudit.Domain.People.PersonPassword", b =>
+                {
+                    b.HasOne("Erudit.Domain.People.Person", "Person")
+                        .WithOne()
+                        .HasForeignKey("Erudit.Domain.People.PersonPassword", "PersonId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_person_passwords_people_person_id");
+
+                    b.Navigation("Person");
                 });
 
             modelBuilder.Entity("Erudit.Domain.People.PersonRole", b =>

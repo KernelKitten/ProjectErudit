@@ -18,6 +18,7 @@ public class EruditDbContext(DbContextOptions<EruditDbContext> options) : DbCont
 {
     public DbSet<Person> People => Set<Person>();
     public DbSet<PersonRole> PersonRoles => Set<PersonRole>();
+    public DbSet<PersonPassword> PersonPasswords => Set<PersonPassword>();
     public DbSet<ParentLink> ParentLinks => Set<ParentLink>();
     public DbSet<LoginRequest> LoginRequests => Set<LoginRequest>();
 
@@ -80,7 +81,7 @@ public class EruditDbContext(DbContextOptions<EruditDbContext> options) : DbCont
 
         var changes = ChangeTracker.Entries()
             .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted
-                && e.Entity is not AuditEntry and not LoginRequest and not Notification)
+                && e.Entity is not AuditEntry and not LoginRequest and not Notification and not PersonPassword) // пароль — свои записи без хэша
             .Select(e => (Entry: e, Action: e.State.ToString(), Fields: DescribeChanges(e)))
             .ToList();
         if (changes.Count == 0)

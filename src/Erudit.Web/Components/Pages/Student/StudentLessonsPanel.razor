@@ -78,7 +78,7 @@ else
                         <MudText Typo="Typo.body2">Свободно мест: @Math.Max(0, l.Capacity - l.Enrolled) из @l.Capacity</MudText>
                         @if (l.WasDeclined)
                         {
-                            <MudText Typo="Typo.body2" Style="color: #666">Был отказ от этого занятия — можно записаться снова.</MudText>
+                            <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-secondary)">Был отказ от этого занятия — можно записаться снова.</MudText>
                         }
                         @if (l.Blocked is not null)
                         {
@@ -139,7 +139,7 @@ else
             <MudText>@l.Subject@(l.Topic is null ? "" : " · " + l.Topic) · @l.Teacher · @l.Room</MudText>
             @if (l.IsSeries)
             {
-                <MudText Typo="Typo.body2" Style="color: #666">
+                <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-secondary)">
                     <MudIcon Icon="@Icons.Material.Outlined.Repeat" Size="Size.Small" Style="vertical-align: -4px" /> Регулярное занятие
                 </MudText>
             }

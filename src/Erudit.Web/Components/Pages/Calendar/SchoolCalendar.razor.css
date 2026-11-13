@@ -37,21 +37,21 @@
     display: inline-block;
     width: 16px;
     height: 16px;
-    border: 1px solid #e0e0e0;
+    border: 1px solid var(--mud-palette-lines-default);
     border-radius: 3px;
     margin-right: 6px;
     vertical-align: middle;
 }
 
 .erudit-legend-off {
-    background: #fdecea;
+    background: var(--erudit-red-bg);
 }
 
 .erudit-legend-vacation {
-    background: #fff4d6;
-    border-color: #f0b429;
+    background: var(--erudit-yellow-bg);
+    border-color: var(--erudit-yellow-border);
 }
 
 .erudit-legend-vacation-part {
-    border: 2px dashed #f0b429;
+    border: 2px dashed var(--erudit-yellow-border);
 }

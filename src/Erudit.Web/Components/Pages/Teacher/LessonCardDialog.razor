@@ -52,11 +52,11 @@
                 <MudText Typo="Typo.subtitle2" Class="mt-2">Записано @_lesson.Active.Count() из @_lesson.Capacity</MudText>
                 @if (_lesson.Students.Count == 0)
                 {
-                    <MudText Typo="Typo.body2" Style="color: #666">Учеников пока нет.</MudText>
+                    <MudText Typo="Typo.body2" Style="color: var(--mud-palette-text-secondary)">Учеников пока нет.</MudText>
                 }
                 @foreach (var st in _lesson.Students)
                 {
-                    <MudText Typo="Typo.body2" Style="@(st.Status == EnrollmentStatus.Active ? null : "color: #999")">
+                    <MudText Typo="Typo.body2" Style="@(st.Status == EnrollmentStatus.Active ? null : "color: var(--mud-palette-text-disabled)")">
                         @st.Student.Label@(st.Status switch
                         {
                             EnrollmentStatus.Declined => " — отказ",

@@ -63,6 +63,38 @@
                     break;
             }
 
+            @* Запасной вход: обычная HTML-форма — cookie ставит HTTP-адрес /auth/password-login. Поля MudBlazor
+               показываем для красоты, а в форму значения попадают через скрытые поля. *@
+            <MudExpansionPanels Class="mt-4" Elevation="0" Outlined>
+                <MudExpansionPanel Text="Войти по паролю (учителям, если MAX не работает)" Expanded="@(Pwd is not null)">
+                    @if (Pwd == "invalid")
+                    {
+                        <MudAlert Severity="Severity.Error" Dense Class="mb-2">Неверный номер или пароль.</MudAlert>
+                    }
+                    else if (Pwd == "locked")
+                    {
+                        <MudAlert Severity="Severity.Warning" Dense Class="mb-2">
+                            Слишком много неверных попыток. Вход по паролю для этого номера закрыт на 15 минут — войдите через MAX
+                            или попробуйте позже.
+                        </MudAlert>
+                    }
+                    <form method="post" action="auth/password-login">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="phone" value="@_phone" />
+                        <input type="hidden" name="password" value="@_password" />
+                        <input type="hidden" name="foreign" value="@(_foreignComputer ? "true" : "false")" />
+                        <MudTextField @bind-Value="_phone" Label="Телефон" InputType="InputType.Telephone" Immediate
+                                      Placeholder="+7 999 123-45-67" Class="mb-2" />
+                        <MudTextField @bind-Value="_password" Label="Пароль" InputType="InputType.Password" Immediate Class="mb-3" />
+                        <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Outlined" Color="Color.Primary" FullWidth
+                                   Disabled="@(string.IsNullOrWhiteSpace(_phone) || string.IsNullOrEmpty(_password))">Войти</MudButton>
+                    </form>
+                    <MudText Typo="Typo.caption" Class="mt-2 d-block" Style="color: var(--mud-palette-text-secondary)">
+                        Пароль задаётся в меню «Пароль для входа» после входа через MAX или его выдаёт администратор.
+                    </MudText>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+
             @if (Environment.IsDevelopment())
             {
                 <MudDivider Class="my-4" />
@@ -78,6 +110,11 @@
 @code {
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
     [SupplyParameterFromQuery(Name = "error")] private string? Error { get; set; }
+    /// <summary>Ошибка входа по паролю: invalid / locked.</summary>
+    [SupplyParameterFromQuery(Name = "pwd")] private string? Pwd { get; set; }
+
+    private string? _phone;
+    private string? _password;
 
     private LoginRequestState? _state;
     private int _requestId;

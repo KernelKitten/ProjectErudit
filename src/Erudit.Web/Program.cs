@@ -40,6 +40,7 @@ builder.Services.AddAuthorization();
 // Даёт компонентам Blazor доступ к текущему пользователю (<AuthorizeView>, [CascadingParameter] Task<AuthenticationState>).
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<SignInService>();
+builder.Services.AddScoped<Erudit.Web.Theme.ThemeState>();
 
 // На стенде сайт стоит за nginx: nginx принимает HTTPS и передаёт запрос нам по обычному HTTP.
 // Из заголовков X-Forwarded-For / X-Forwarded-Proto узнаём настоящий адрес клиента и то, что снаружи был https

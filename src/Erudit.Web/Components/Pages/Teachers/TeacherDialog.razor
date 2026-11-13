@@ -43,6 +43,35 @@
                 }
             }
         </MudForm>
+        @if (PersonId is not null && _editorIsAdmin && !_fired)
+        {
+            @* Запасной вход по паролю: администратор выдаёт временный, учитель меняет его при первом входе. *@
+            <MudDivider Class="my-3" />
+            <MudText Typo="Typo.subtitle2">Пароль для входа</MudText>
+            <MudText Typo="Typo.body2" Class="mb-2">
+                @(_hasPassword ? "Пароль задан." : "Пароль не задан — учитель входит только через MAX.")
+            </MudText>
+            @if (_tempPassword is not null)
+            {
+                <MudAlert Severity="Severity.Success" Dense Class="mb-2">
+                    Временный пароль: <b style="font-family: monospace; font-size: 1.1rem">@_tempPassword</b><br />
+                    Передайте его учителю лично — больше он нигде не покажется. При первом входе учитель задаст свой пароль.
+                </MudAlert>
+            }
+            else if (_confirmTemp)
+            {
+                <MudAlert Severity="Severity.Warning" Dense Class="mb-2">
+                    @(_hasPassword ? "Прежний пароль перестанет действовать. " : "")Выдать временный пароль?
+                    <MudButton Size="Size.Small" Color="Color.Warning" OnClick="IssueTemporaryAsync">Выдать</MudButton>
+                    <MudButton Size="Size.Small" OnClick="() => _confirmTemp = false">Нет</MudButton>
+                </MudAlert>
+            }
+            else
+            {
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Key"
+                           OnClick="() => _confirmTemp = true">Выдать временный пароль</MudButton>
+            }
+        }
         @if (_error is not null)
         {
             <MudAlert Severity="Severity.Error" Dense Class="mt-2">@_error</MudAlert>
@@ -72,6 +101,26 @@
     private bool _editorIsAdmin;
     private bool _isSelf;
     private List<string> _consequences = [];
+    private bool _hasPassword;
+    private bool _confirmTemp;
+    private string? _tempPassword;
+
+    private async Task IssueTemporaryAsync()
+    {
+        _error = null;
+        try
+        {
+            var user = (await AuthState).User;
+            await using var db = await DbFactory.CreateForAsync(user);
+            _tempPassword = await new Erudit.Infrastructure.Auth.PasswordService(db, Time).IssueTemporaryAsync(PersonId!.Value, user.GetPersonId() ?? 0);
+            _hasPassword = true;
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+        }
+        _confirmTemp = false;
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -90,6 +139,7 @@
         _isHeadTeacher = person.HasRole(Role.HeadTeacher);
         _isAdmin = person.HasRole(Role.Admin);
         _fired = !person.IsActive;
+        _hasPassword = await db.PersonPasswords.AnyAsync(p => p.PersonId == PersonId);
 
         // Что останется «висеть», если учитель уволится, — покажем при включении «Уволился».
         var now = Time.GetUtcNow().UtcDateTime;

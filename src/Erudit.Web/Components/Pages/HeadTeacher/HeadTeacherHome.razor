@@ -64,7 +64,7 @@ else
                 }
                 else
                 {
-                    <span style="color: #666">—</span>
+                    <span style="color: var(--mud-palette-text-secondary)">—</span>
                 }
             </MudTd>
             <MudTd DataLabel="Инд., ак. ч.">@Hours(context.IndividualHours)</MudTd>
@@ -84,7 +84,7 @@ else
         </FooterContent>
         <NoRecordsContent><MudText>За этот период занятий нет.</MudText></NoRecordsContent>
     </MudTable>
-    <MudText Typo="Typo.caption" Style="color: #666">
+    <MudText Typo="Typo.caption" Style="color: var(--mud-palette-text-secondary)">
         В часы входят только проведённые занятия; «Всего» включает и проведённые без учеников.
         1 ак. ч. = @AcademicHours.MinutesPerHour минут, итоги округлены до сотых. Нажмите на учителя — откроется его подробный отчёт.
     </MudText>

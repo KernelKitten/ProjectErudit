@@ -94,6 +94,42 @@ public static class AuthEndpoints
             return Results.LocalRedirect(home ?? "/");
         }).RequireAuthorization();
 
+        // Запасной вход по телефону и паролю (учителя, завуч, администратор). Ошибку показываем на /login без номера
+        // в адресе (персональные данные в адрес не кладём): номер придётся ввести ещё раз.
+        auth.MapPost("/password-login", async ([FromForm] string? phone, [FromForm] string? password, [FromForm] bool? foreign,
+            HttpContext http, PasswordService passwords, SignInService signIn) =>
+        {
+            var result = await passwords.LoginAsync(phone, password);
+            if (result.Status == PasswordLoginStatus.Locked)
+            {
+                return Results.LocalRedirect("/login?pwd=locked");
+            }
+            var home = result.Status == PasswordLoginStatus.Ok
+                ? await signIn.SignInAsync(http, result.PersonId, persistent: foreign != true, mustChangePassword: result.MustChange)
+                : null;
+            return Results.LocalRedirect(home ?? "/login?pwd=invalid");
+        });
+
+        // Смена своего пароля (страница /account/password). После смены — cookie заново, без отметки «сменить пароль».
+        auth.MapPost("/password", async ([FromForm] string? password, [FromForm] string? confirm,
+            HttpContext http, PasswordService passwords, SignInService signIn) =>
+        {
+            if (password != confirm)
+            {
+                return Results.LocalRedirect("/account/password?error=mismatch");
+            }
+            try
+            {
+                await passwords.SetOwnAsync(http.User.GetPersonId() ?? 0, password);
+            }
+            catch (InvalidOperationException)
+            {
+                return Results.LocalRedirect("/account/password?error=invalid");
+            }
+            await signIn.RefreshAsync(http);
+            return Results.LocalRedirect("/account/password?done=true");
+        }).RequireAuthorization();
+
         // Вход под любым человеком без MAX — ТОЛЬКО в режиме разработки.
         // На рабочем сервере этот адрес просто не существует.
         if (app.Environment.IsDevelopment())
