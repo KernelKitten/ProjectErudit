@@ -88,6 +88,7 @@ public static class DependencyInjection
         services.AddScoped<Lessons.TeacherWeekService>();
         services.AddScoped<Lessons.LessonFormService>();
         services.AddScoped<Lessons.TeacherReportService>();
+        services.AddScoped<Lessons.ClassReportService>();
         services.AddScoped<SchoolYearReminderJob>();
         services.AddScoped<Notifications.NotificationSender>();
         services.AddScoped<Notifications.NotificationScheduleJob>();

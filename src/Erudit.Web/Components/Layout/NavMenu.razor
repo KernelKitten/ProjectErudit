@@ -10,7 +10,8 @@
                 <MudNavLink Href="teacher/report" Icon="@Icons.Material.Outlined.Assessment">Отчёт за период</MudNavLink>
                 break;
             case AppRoles.ClassTeacher:
-                <MudNavLink Href="class-teacher" Icon="@Icons.Material.Outlined.Groups">Мои классы</MudNavLink>
+                <MudNavLink Href="class-teacher" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.Groups">Мои классы</MudNavLink>
+                <MudNavLink Href="class-teacher/report" Icon="@Icons.Material.Outlined.Assessment">Отчёт по классу</MudNavLink>
                 break;
             case AppRoles.HeadTeacher:
                 <MudNavLink Href="head-teacher" Icon="@Icons.Material.Outlined.Assessment">Сводка по учителям</MudNavLink>

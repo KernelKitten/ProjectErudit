@@ -27,6 +27,9 @@ else
                     <MudButton Href="@($"classes/{c.Id}")" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small">
                         Открыть
                     </MudButton>
+                    <MudButton Href="@($"class-teacher/report?class={c.Id}")" Variant="Variant.Outlined" Size="Size.Small" Class="ml-2">
+                        Отчёт
+                    </MudButton>
                 </MudPaper>
             </MudItem>
         }

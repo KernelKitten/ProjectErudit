@@ -1,0 +1,176 @@
+@page "/class-teacher/report"
+@attribute [Authorize(Roles = AppRoles.ClassTeacher + "," + AppRoles.DirectoryManagers)]
+@* Отчёт классного руководителя (этап 7, шаг 3): кто из учеников класса куда ходит и сколько за период.
+   Классный руководитель — свои классы, завуч и администратор — любой класс текущего года (?class=12&from=&to=).
+   Подсчёт — Domain/Lessons/ClassReport, загрузка — ClassReportService. *@
+@using Erudit.Domain.Lessons
+@using Erudit.Infrastructure.Lessons
+@inject ClassReportService ReportService
+
+
+<PageTitle>Отчёт по классу</PageTitle>
+
+<MudText Typo="Typo.h5" GutterBottom>Отчёт по классу</MudText>
+
+@if (_classes is null)
+{
+    <MudProgressLinear Indeterminate />
+}
+else if (_classes.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">В текущем учебном году у вас нет классов.</MudAlert>
+}
+else if (_denied)
+{
+    <MudAlert Severity="Severity.Warning">Это не ваш класс.</MudAlert>
+}
+else
+{
+    <MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Start" Class="mb-3">
+        <MudSelect T="int" Value="_classId" ValueChanged="ClassChangedAsync" Label="Класс" Style="min-width: 120px; max-width: 160px">
+            @foreach (var c in _classes)
+            {
+                <MudSelectItem T="int" Value="c.Id">@c.Name</MudSelectItem>
+            }
+        </MudSelect>
+        <ReportPeriodPicker From="From" To="To" Changed="PeriodChangedAsync" />
+    </MudStack>
+
+    @if (_report is null)
+    {
+        <MudProgressLinear Indeterminate />
+    }
+    else
+    {
+        <MudTable T="ClassReportRow" Items="_report.Rows" Dense Hover Breakpoint="Breakpoint.Sm" Elevation="0" Outlined
+                  OnRowClick="Toggle" RowStyle="cursor: pointer">
+            <HeaderContent>
+                <MudTh>Ученик</MudTh>
+                <MudTh>Проведено</MudTh>
+                <MudTh>Был(а)</MudTh>
+                <MudTh>Не был(а)</MudTh>
+                <MudTh>Ак. ч.</MudTh>
+                <MudTh>Впереди</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Ученик">
+                    @if (context.Lines.Count > 0)
+                    {
+                        <MudIcon Icon="@(_open.Contains(context.Student.Id) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                                 Size="Size.Small" Style="vertical-align: -4px" />
+                    }
+                    @context.Student.Name
+                    @if (context.Student.Note is not null)
+                    {
+                        <span style="color: var(--mud-palette-text-secondary)"> (@context.Student.Note)</span>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Проведено">@Dash(context.Counts.Held)</MudTd>
+                <MudTd DataLabel="Был(а)">@Dash(context.Counts.Attended)</MudTd>
+                <MudTd DataLabel="Не был(а)">@Dash(context.Counts.Absent)</MudTd>
+                <MudTd DataLabel="Ак. ч.">@(context.Counts.Minutes > 0 ? Hours(context.Counts.Hours) : "—")</MudTd>
+                <MudTd DataLabel="Впереди">@Dash(context.Counts.Upcoming)</MudTd>
+            </RowTemplate>
+            <ChildRowContent>
+                @if (_open.Contains(context.Student.Id))
+                {
+                    @foreach (var line in context.Lines)
+                    {
+                        <MudTr>
+                            <MudTd DataLabel="Предмет" Style="padding-left: 40px; color: var(--mud-palette-text-secondary)">
+                                @line.Subject · @line.Teacher
+                            </MudTd>
+                            <MudTd DataLabel="Проведено">@Dash(line.Counts.Held)</MudTd>
+                            <MudTd DataLabel="Был(а)">@Dash(line.Counts.Attended)</MudTd>
+                            <MudTd DataLabel="Не был(а)">@Dash(line.Counts.Absent)</MudTd>
+                            <MudTd DataLabel="Ак. ч.">@(line.Counts.Minutes > 0 ? Hours(line.Counts.Hours) : "—")</MudTd>
+                            <MudTd DataLabel="Впереди">@Dash(line.Counts.Upcoming)</MudTd>
+                        </MudTr>
+                    }
+                }
+            </ChildRowContent>
+            <FooterContent>
+                <MudTd DataLabel="Ученик"><b>Итого по классу</b></MudTd>
+                <MudTd DataLabel="Проведено"><b>@_report.Total.Held</b></MudTd>
+                <MudTd DataLabel="Был(а)"><b>@_report.Total.Attended</b></MudTd>
+                <MudTd DataLabel="Не был(а)"><b>@_report.Total.Absent</b></MudTd>
+                <MudTd DataLabel="Ак. ч."><b>@Hours(_report.Total.Hours)</b></MudTd>
+                <MudTd DataLabel="Впереди"><b>@_report.Total.Upcoming</b></MudTd>
+            </FooterContent>
+            <NoRecordsContent><MudText>В этом классе за период не было учеников.</MudText></NoRecordsContent>
+        </MudTable>
+        <MudText Typo="Typo.caption" Style="color: var(--mud-palette-text-secondary)">
+            «Проведено» — проведённые занятия, на которые ученик был записан; в часы входят только те, где он был
+            (1 ак. ч. = @AcademicHours.MinutesPerHour минут). Нажмите на ученика — предметы и учителя.
+            Перешедшие в другой класс считаются только за время в этом классе.
+        </MudText>
+    }
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = null!;
+
+    [SupplyParameterFromQuery(Name = "class")] public int? ClassParam { get; set; }
+    [SupplyParameterFromQuery] public DateOnly? From { get; set; }
+    [SupplyParameterFromQuery] public DateOnly? To { get; set; }
+
+    private List<ReportClass>? _classes;
+    private int _classId;
+    private bool _denied;
+    private (DateOnly From, DateOnly To)? _period;
+    private ClassReport? _report;
+    private readonly HashSet<int> _open = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthState).User;
+        var isManager = user.IsInRole(AppRoles.HeadTeacher) || user.IsInRole(AppRoles.Admin);
+        var personId = user.GetPersonId() ?? 0;
+        _classes = await ReportService.ClassesAsync(personId, isManager);
+        if (ClassParam is { } id)
+        {
+            // Класс из адреса (например, со страницы прошлого года) — только если его можно смотреть.
+            _denied = !await ReportService.CanViewAsync(id, personId, isManager);
+            _classId = id;
+        }
+        else
+        {
+            _classId = _classes.FirstOrDefault()?.Id ?? 0;
+        }
+    }
+
+    private async Task ClassChangedAsync(int classId)
+    {
+        _classId = classId;
+        _open.Clear();
+        await LoadAsync();
+    }
+
+    private async Task PeriodChangedAsync((DateOnly From, DateOnly To) period)
+    {
+        _period = period;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_period is not { } p || _classId == 0 || _denied)
+        {
+            return;
+        }
+        _report = null;
+        _report = await ReportService.LoadAsync(_classId, p.From, p.To);
+    }
+
+    private void Toggle(TableRowClickEventArgs<ClassReportRow> row)
+    {
+        if (row.Item is { } r && !_open.Remove(r.Student.Id))
+        {
+            _open.Add(r.Student.Id);
+        }
+    }
+
+    private static string Dash(int value) => value == 0 ? "—" : value.ToString();
+
+    private static string Hours(decimal hours) => hours.ToString("0.00");
+}

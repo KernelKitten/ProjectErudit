@@ -21,6 +21,9 @@ else
     <MudStack Row Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Class="mb-1">
         <MudText Typo="Typo.h5" Class="flex-grow-1">Класс @_class.Name · @_class.AcademicYear.Name</MudText>
         <MudSwitch T="bool" Value="_showLeft" ValueChanged="ToggleLeftAsync" Label="Показывать выбывших" Color="Color.Primary" />
+        <MudButton Href="@($"class-teacher/report?class={ClassId}")" Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Assessment">
+            Отчёт по классу
+        </MudButton>
         @* Excel — только если сейчас в классе нет учеников (выбывшие не считаются). *@
         @if (!_rows.Any(r => r.Left is null))
         {
