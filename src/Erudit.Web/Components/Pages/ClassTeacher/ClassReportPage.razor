@@ -5,7 +5,10 @@
    Подсчёт — Domain/Lessons/ClassReport, загрузка — ClassReportService. *@
 @using Erudit.Domain.Lessons
 @using Erudit.Infrastructure.Lessons
+@using Erudit.Infrastructure.Reports
 @inject ClassReportService ReportService
+@inject IJSRuntime JS
+@inject TimeProvider Time
 
 
 <PageTitle>Отчёт по классу</PageTitle>
@@ -34,6 +37,7 @@ else
             }
         </MudSelect>
         <ReportPeriodPicker From="From" To="To" Changed="PeriodChangedAsync" />
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Download" OnClick="DownloadAsync" Disabled="@(_report is null)" Style="align-self: center">Скачать Excel</MudButton>
     </MudStack>
 
     @if (_report is null)
@@ -160,6 +164,18 @@ else
         }
         _report = null;
         _report = await ReportService.LoadAsync(_classId, p.From, p.To);
+    }
+
+    private async Task DownloadAsync()
+    {
+        if (_report is null || _period is not { } p)
+        {
+            return;
+        }
+        var className = _classes?.FirstOrDefault(c => c.Id == _classId)?.Name ?? "";
+        var period = ExcelReports.PeriodLabel(p.From, p.To);
+        await JS.DownloadExcelAsync(ExcelReports.FileName($"Отчёт по классу {className} — {period}"),
+            ExcelReports.Class(_report, className, period, SchoolTime.ToSchool(Time.GetUtcNow().UtcDateTime)));
     }
 
     private void Toggle(TableRowClickEventArgs<ClassReportRow> row)

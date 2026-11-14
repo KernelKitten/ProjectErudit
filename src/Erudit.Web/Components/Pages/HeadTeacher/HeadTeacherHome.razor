@@ -6,7 +6,10 @@
 @using Erudit.Domain.Lessons
 @using Erudit.Domain.School
 @using Erudit.Infrastructure.Lessons
+@using Erudit.Infrastructure.Reports
 @inject TeacherReportService ReportService
+@inject IJSRuntime JS
+@inject TimeProvider Time
 @inject IDbContextFactory<EruditDbContext> DbFactory
 @inject NavigationManager Navigation
 
@@ -26,6 +29,7 @@
     <MudSwitch T="bool" Value="_showIdle" ValueChanged="v => _showIdle = v" Color="Color.Primary" Style="align-self: center">
         Учителя без занятий
     </MudSwitch>
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Download" OnClick="DownloadAsync" Disabled="@(_rows is null)" Style="align-self: center">Скачать Excel</MudButton>
 </MudStack>
 
 @if (_rows is null)
@@ -130,6 +134,18 @@ else
         }
         _rows = null;
         _rows = await ReportService.SummaryAsync(p.From, p.To, _subjectId);
+    }
+
+    private async Task DownloadAsync()
+    {
+        if (_rows is null || _period is not { } p)
+        {
+            return;
+        }
+        var period = ExcelReports.PeriodLabel(p.From, p.To);
+        var subject = _subjects.FirstOrDefault(s => s.Id == _subjectId)?.Name;
+        await JS.DownloadExcelAsync(ExcelReports.FileName($"Сводка по учителям — {period}" + (subject is null ? "" : $" — {subject}")),
+            ExcelReports.TeacherSummary(Visible, period, subject, SchoolTime.ToSchool(Time.GetUtcNow().UtcDateTime)));
     }
 
     private void Open(TableRowClickEventArgs<TeacherSummaryRow> row)

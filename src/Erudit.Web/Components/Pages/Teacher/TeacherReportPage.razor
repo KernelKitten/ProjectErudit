@@ -5,7 +5,10 @@
    учителя из сводки (?teacher=12&from=2026-10-01&to=2026-10-31). Выгрузка в Excel — этап 7, шаг 4. *@
 @using Erudit.Domain.Lessons
 @using Erudit.Infrastructure.Lessons
+@using Erudit.Infrastructure.Reports
 @inject TeacherReportService ReportService
+@inject IJSRuntime JS
+@inject TimeProvider Time
 @inject IDbContextFactory<EruditDbContext> DbFactory
 @inject IDialogService DialogService
 @inject IBrowserViewportService Viewport
@@ -29,6 +32,7 @@
     @if (_ready)
     {
         <ReportPeriodPicker From="From" To="To" Changed="PeriodChangedAsync" />
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Download" OnClick="DownloadAsync" Disabled="@(_report is null)" Style="align-self: center">Скачать Excel</MudButton>
     }
 </MudStack>
 
@@ -175,6 +179,18 @@ else
     {
         _period = period;
         await LoadAsync();
+    }
+
+    private async Task DownloadAsync()
+    {
+        if (_report is null || _period is not { } p)
+        {
+            return;
+        }
+        var name = _teacherName ?? (await AuthState).User.Identity?.Name ?? "";
+        var period = ExcelReports.PeriodLabel(p.From, p.To);
+        await JS.DownloadExcelAsync(ExcelReports.FileName($"Отчёт учителя {name} — {period}"),
+            ExcelReports.Teacher(_report, name, period, SchoolTime.ToSchool(Time.GetUtcNow().UtcDateTime)));
     }
 
     private async Task LoadAsync()

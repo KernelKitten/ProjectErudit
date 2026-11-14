@@ -4,7 +4,9 @@
 @using Erudit.Infrastructure.People
 @inject IDbContextFactory<EruditDbContext> DbFactory
 @inject IServiceScopeFactory Scopes
+@using Erudit.Infrastructure.Reports
 @inject TimeProvider Time
+@inject IJSRuntime JS
 
 <PageTitle>Проверка данных</PageTitle>
 
@@ -16,6 +18,7 @@
             <MudSelectItem T="int?" Value="y.Id">@y.Name</MudSelectItem>
         }
     </MudSelect>
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Outlined.Download" OnClick="DownloadAsync" Disabled="@(_report is null)" Style="align-self: center">Скачать Excel</MudButton>
 </MudStack>
 <MudText Typo="Typo.body2" Class="mb-4">
     Всё ли загружено правильно, прежде чем звать учителей, учеников и родителей в систему.
@@ -160,6 +163,17 @@ else
     {
         _yearId = yearId;
         await LoadAsync();
+    }
+
+    private async Task DownloadAsync()
+    {
+        if (_report is null)
+        {
+            return;
+        }
+        var year = _years.FirstOrDefault(y => y.Id == _yearId)?.Name ?? "";
+        await JS.DownloadExcelAsync(ExcelReports.FileName($"Проверка данных {year}"),
+            ExcelReports.DataCheck(_report, year, SchoolTime.ToSchool(Time.GetUtcNow().UtcDateTime)));
     }
 
     private async Task LoadAsync()
